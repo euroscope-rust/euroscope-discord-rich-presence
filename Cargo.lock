@@ -76,6 +76,8 @@ dependencies = [
 [[package]]
 name = "euroscope"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e4e8458a08d1021fce23e795b93269cb5185a8edfbf6ee21a201a6353feb80a"
 dependencies = [
  "euroscope-sys",
 ]
@@ -92,6 +94,8 @@ dependencies = [
 [[package]]
 name = "euroscope-sys"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d53d1307672974bd148555c9868147c27be70cfada624202b684b158ef6e92c"
 dependencies = [
  "cc",
 ]

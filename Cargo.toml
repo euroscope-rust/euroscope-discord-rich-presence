@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 [dependencies]
 chrono = "= 0.4.45"
 discord-rich-presence = "= 1.1.0"
-euroscope = { path = "../euroscope-plugin/euroscope", version = "= 0.0.1" }
+euroscope = "= 0.0.1"
 
 [lints.rust]
 ambiguous_negative_literals = "warn"
