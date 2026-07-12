@@ -7,9 +7,17 @@ updates:
       interval: daily
     commit-message:
       prefix: deps
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 7
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: daily
     commit-message:
       prefix: deps
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 7

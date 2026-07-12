@@ -21,19 +21,25 @@ ci-lint:
   $env:RUSTFLAGS = "-Dwarnings"; just lint
 
 alias b := build
-# Build (debug) for the 32-bit EuroScope target
+# Build (debug)
 build:
   cargo build
+alias br := build-release
+# Build (release)
+build-release:
+  cargo build --release
 [private]
 ci-build:
-  $env:RUSTFLAGS = "-Dwarnings"; cargo build
+  $env:RUSTFLAGS = "-Dwarnings"; just build-release
+
 
 alias t := test
 # Run tests
 test:
   $env:EUROSCOPE_PLUGIN_DELAYLOAD = "1"; cargo test
 [private]
-ci-test: test
+ci-test:
+  $env:RUSTFLAGS = "-Dwarnings"; just test
 
 # Cleanup rust build directory
 clean:
