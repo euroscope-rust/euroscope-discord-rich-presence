@@ -5,17 +5,12 @@ on:
   push:
     branches:
       - main
-  pull_request: {}
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  CARGO_TERM_COLOR: always
 
 jobs:
   lint:
@@ -46,3 +41,36 @@ jobs:
           tool: just
       - uses: euroscope-rust/actions/install@2206ca39837dfa846ce5f345476c7cde90083283
       - run: just ci-${{ matrix.job }}
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        euroscope-version:
+          - latest
+          - 3.2.3.2
+          - 3.2.2.3
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          target: i686-pc-windows-msvc
+      - uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2.83.0
+        with:
+          tool: just
+      - uses: euroscope-rust/actions/install@2206ca39837dfa846ce5f345476c7cde90083283
+        with:
+          version: "${{ matrix.euroscope-version }}"
+      - run: just ci-build
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          target: i686-pc-windows-msvc
+      - uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2.83.0
+        with:
+          tool: just
+      - uses: euroscope-rust/actions/install@2206ca39837dfa846ce5f345476c7cde90083283
+      - run: just ci-test
