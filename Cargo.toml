@@ -1,0 +1,126 @@
+[package]
+name = "euroscope-discord-rich-presence"
+version = "0.1.0"
+description = "EuroScope plugin to provide Discord Rich Presence information"
+authors = ["Marc 'risson' Schmitt <vatsim@risson.space>"]
+edition = "2024"
+readme = "README.md"
+homepage = "https://github.com/rissson/euroscope-plugin-rust"
+repository = "https://github.com/rissson/euroscope-plugin-rust.git"
+license = "MIT OR Apache-2.0"
+keywords = ["euroscope", "vatsim", "plugin", "discord"]
+categories = ["aerospace::simulation"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+chrono = "= 0.4.45"
+discord-rich-presence = "= 1.1.0"
+euroscope = "= 0.0.1"
+
+[lints.rust]
+ambiguous_negative_literals = "warn"
+closure_returning_async_block = "warn"
+macro_use_extern_crate = "deny"
+non_ascii_idents = "deny"
+redundant_imports = "warn"
+semicolon_in_expressions_from_macros = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unit_bindings = "warn"
+unreachable_pub = "warn"
+unused_extern_crates = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_macro_rules = "warn"
+unused_qualifications = "warn"
+
+[lints.rustdoc]
+unescaped_backticks = "warn"
+
+[lints.clippy]
+# ### enable all lints
+cargo = { priority = -1, level = "warn" }
+complexity = { priority = -1, level = "warn" }
+correctness = { priority = -1, level = "warn" }
+pedantic = { priority = -1, level = "warn" }
+nursery = { priority = -1, level = "warn" }
+perf = { priority = -1, level = "warn" }
+# # Those are too restrictive and disabled by default, however we enable some below
+# # restriction = { priority = -1, level = "warn" }
+style = { priority = -1, level = "warn" }
+suspicious = { priority = -1, level = "warn" }
+# ### and disable the ones we don't want
+# ### pedantic group
+fn_params_excessive_bools = "allow"
+many_single_char_names = "allow"
+must_use_candidate = "allow"
+# ### nursery
+missing_const_for_fn = "allow"
+option_if_let_else = "allow"
+redundant_pub_crate = "allow"
+# ### restriction group
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+as_conversions = "warn"
+as_pointer_underscore = "warn"
+as_underscore = "warn"
+assertions_on_result_states = "warn"
+clone_on_ref_ptr = "warn"
+create_dir = "warn"
+dbg_macro = "warn"
+default_numeric_fallback = "warn"
+disallowed_script_idents = "warn"
+empty_drop = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+error_impl_error = "warn"
+exit = "warn"
+filetype_is_file = "warn"
+float_cmp_const = "warn"
+fn_to_numeric_cast_any = "warn"
+get_unwrap = "warn"
+if_then_some_else_none = "warn"
+impl_trait_in_params = "warn"
+infinite_loop = "warn"
+lossy_float_literal = "warn"
+map_with_unused_argument_over_ranges = "warn"
+mem_forget = "warn"
+missing_asserts_for_indexing = "warn"
+missing_trait_methods = "warn"
+mixed_read_write_in_expression = "warn"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+needless_raw_strings = "warn"
+non_zero_suggestions = "warn"
+panic_in_result_fn = "warn"
+pathbuf_init_then_push = "warn"
+print_stdout = "warn"
+rc_buffer = "warn"
+redundant_test_prefix = "warn"
+redundant_type_annotations = "warn"
+ref_patterns = "warn"
+renamed_function_params = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+return_and_then = "warn"
+same_name_method = "warn"
+semicolon_inside_block = "warn"
+str_to_string = "warn"
+string_add = "warn"
+suspicious_xor_used_as_pow = "warn"
+tests_outside_test_module = "warn"
+todo = "warn"
+try_err = "warn"
+undocumented_unsafe_blocks = "warn"
+unimplemented = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+unnecessary_self_imports = "warn"
+unneeded_field_pattern = "warn"
+unseparated_literal_suffix = "warn"
+unused_result_ok = "warn"
+unused_trait_names = "warn"
+unwrap_in_result = "warn"
+unwrap_used = "warn"
+verbose_file_reads = "warn"
