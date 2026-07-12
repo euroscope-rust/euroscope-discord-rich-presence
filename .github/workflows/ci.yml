@@ -44,23 +44,5 @@ jobs:
       - uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2.83.0
         with:
           tool: just
-      - name: Download EuroScope installer
-        run: |
-          $url = "https://euroscope.hu/install/EuroScopeSetup.3.2.13.msi"
-          Write-Host "Downloading EuroScope from $url"
-          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\EuroScopeSetup.msi"
-      - name: Install EuroScope
-        run: |
-          $msi = "$env:RUNNER_TEMP\EuroScopeSetup.msi"
-          $log = "$env:RUNNER_TEMP\euroscope-install.log"
-          Write-Host "Installing EuroScope..."
-          $p = Start-Process msiexec.exe `
-            -ArgumentList "/i `"$msi`" /qn /norestart /l*v `"$log`"" `
-            -Wait -PassThru
-          if ($p.ExitCode -ne 0) {
-            Write-Host "msiexec failed with exit code $($p.ExitCode)"
-            Get-Content $log -Tail 50
-            exit $p.ExitCode
-          }
-          Write-Host "EuroScope installed."
+      - uses: euroscope-rust/actions/install@2206ca39837dfa846ce5f345476c7cde90083283
       - run: just ci-${{ matrix.job }}
