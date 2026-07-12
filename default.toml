@@ -1,0 +1,71 @@
+# General app settings
+[general]
+# When our connection to Discord drops, how often to retry connecting.
+activity_retry_interval_s = 15
+# Minimum interval between presence pushes. Discord rate-limits updates to ~5
+# per 20s. Since the tracked and in range counts churn constantly, we limit the
+# number of updates.
+activity_min_push_interval_s = 5
+
+# Discord-specific settings
+[discord]
+# The Discord application client ID. Defaults to a generic application with a few assets provided.
+client_id = "1525152891478872094"
+
+# A map of radio names for easier rendering of station names.
+[radio_names]
+# LSGG_A_GND = "Geneva Apron"
+# The keys here are actually globs, so you could do:
+# "LS*_CTR" = "Swiss Radar"
+
+# How the activity will render in Discord.
+#
+# Those strings can be templated with the following placeholders:
+# - `action`: One of "Supervising", "Administrating", "Observing",
+#   "Controlling". This is computed depending on how the controller is connected.
+#   If connected as an observer, but holding a rating of SUP/ADM the
+#   corresponding values are used, otherwise "Observing".
+#   If connected as a controller, "Controlling" is used.
+# - `callsign`: the controller callsign (for example, `LSAS_CTR`).
+# - `rating`: the controller rating (for example, `C1`). May be empty.
+# - `frequency`: the primary frequency (for example, `133.005`). May be empty.
+# - `tracked`: the number of tracked aircraft.
+# - `in_range`: the number of aircraft in range.
+# - `radar_url`: a VATSIM Radar URL pointing to the controller (for example,
+#   `https://vatsim-radar.com/?atc=LFST_TWR`).
+# - `radio_name`: one of the names defined above (for example, `Geneva Apron`). May be empty.
+#
+# The templating is done with `tera`. Check out their documentation for details:
+# https://keats.github.io/tera/
+#
+# For details on what each of those do, refer to Discord's documentation:
+# https://docs.discord.com/developers/discord-social-sdk/development-guides/setting-rich-presence
+# You can also simply try them out and reload the configuration while the plugin
+# is loaded to see the changes live.
+#
+# To disable any of those values, set it to an empty string.
+[activity]
+# This is the only string that cannot be templated.
+name = "EuroScope"
+# One of "Playing", "Listening", "Watching", "Competing".
+activity_type = "Playing"
+# One of "Name", "State", "Details"
+status_display_type = "Details"
+details = "{{ action }} as {% if radio_name %}{{ radio_name }}{% else %}{{ callsign }}{% endif %}{% if rating %} ({{ rating }}){% endif %}"
+details_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
+state = "{{ tracked }} tracked · {{ in_range }} in range · {% if frequency %}{{ frequency }} MHz{% else %}No primary frequency{% endif %}"
+state_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
+
+[activity.assets]
+large_image = "vatsim"
+large_text = "{{ action }} as {% if radio_name %}{{ radio_name }}{% else %}{{ callsign }}{% endif %}{% if rating %} ({{ rating }}){% endif %}"
+large_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
+small_image = ""
+small_text = "{% if frequency %}{{ frequency }} MHz{% else %}No primary frequency{% endif %}"
+small_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
+
+# Discord only allows two buttons, so no `third`. To disable a button, set it to
+# `{}`, like the second one is done by default.
+[activity.buttons]
+first = { label = "See on VATSIM Radar", url = "{{ radar_url }}" }
+second = {}

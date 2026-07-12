@@ -7,6 +7,7 @@
 //! thread — all Discord IPC happens on the worker thread.
 
 mod presence;
+pub(crate) mod settings;
 
 use euroscope::{Context, Plugin, register_plugin};
 
