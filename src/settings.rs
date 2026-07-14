@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
 use config::{Config, File, FileFormat};
@@ -6,103 +9,78 @@ use serde::Deserialize;
 
 const DEFAULT_CONFIG: &str = include_str!("../default.toml");
 
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct Settings {
-    general: GeneralSettings,
-    discord: DiscordSettings,
-    radio_names: HashMap<String, String>,
-    activity: ActivitySettings,
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Settings {
+    pub general: GeneralSettings,
+    pub discord: DiscordSettings,
+    pub radio_names: HashMap<String, String>,
+    pub activity: ActivitySettings,
+    pub templates: Vec<TemplateSettings>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct GeneralSettings {
-    activity_retry_interval_s: u64,
-    activity_min_push_interval_s: u64,
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct GeneralSettings {
+    pub activity_retry_interval_s: u64,
+    pub activity_min_push_interval_s: u64,
+    pub treat_other_connections_as_direct: bool,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct DiscordSettings {
-    client_id: String,
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct DiscordSettings {
+    pub client_id: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct ActivitySettings {
-    name: String,
-    activity_type: ActivityType,
-    status_display_type: StatusDisplayType,
-    details: String,
-    details_url: String,
-    state: String,
-    state_url: String,
-    assets: ActivityAssetsSettings,
-    buttons: ActivityButtonsSettings,
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ActivitySettings {
+    pub name: String,
+    pub activity_type: String,
+    pub status_display_type: String,
+    pub details: String,
+    pub details_url: String,
+    pub state: String,
+    pub state_url: String,
+    pub assets: ActivityAssetsSettings,
+    pub buttons: ActivityButtonsSettings,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) enum ActivityType {
-    Playing,
-    Listening,
-    Watching,
-    Competing,
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ActivityAssetsSettings {
+    pub large_image: String,
+    pub large_text: String,
+    pub large_url: String,
+    pub small_image: String,
+    pub small_text: String,
+    pub small_url: String,
 }
 
-impl Into<discord_rich_presence::activity::ActivityType> for ActivityType {
-    fn into(self) -> discord_rich_presence::activity::ActivityType {
-        match self {
-            Self::Playing => discord_rich_presence::activity::ActivityType::Playing,
-            Self::Listening => discord_rich_presence::activity::ActivityType::Listening,
-            Self::Watching => discord_rich_presence::activity::ActivityType::Watching,
-            Self::Competing => discord_rich_presence::activity::ActivityType::Competing,
-        }
-    }
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ActivityButtonsSettings {
+    pub first: ActivityButtonSettings,
+    pub second: ActivityButtonSettings,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) enum StatusDisplayType {
-    Name,
-    State,
-    Details,
-}
-
-impl Into<discord_rich_presence::activity::StatusDisplayType> for StatusDisplayType {
-    fn into(self) -> discord_rich_presence::activity::StatusDisplayType {
-        match self {
-            Self::Name => discord_rich_presence::activity::StatusDisplayType::Name,
-            Self::State => discord_rich_presence::activity::StatusDisplayType::State,
-            Self::Details => discord_rich_presence::activity::StatusDisplayType::Details,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct ActivityAssetsSettings {
-    large_image: String,
-    large_text: String,
-    large_url: String,
-    small_image: String,
-    small_text: String,
-    small_url: String,
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct ActivityButtonsSettings {
-    first: ActivityButtonSettings,
-    second: ActivityButtonSettings,
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct ActivityButtonSettings {
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ActivityButtonSettings {
     #[serde(default)]
-    label: String,
+    pub label: String,
     #[serde(default)]
-    url: String,
+    pub url: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct TemplateSettings {
+    pub name: String,
+    pub template: String,
 }
 
 impl Settings {
-    pub(crate) fn load() -> Result<Self> {
-        let raw = Config::builder()
-            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Toml))
-            .build()?;
+    pub fn load(extra_paths: &[&str]) -> Result<Self> {
+        let mut builder =
+            Config::builder().add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Toml));
+        for path in extra_paths {
+            builder = builder.add_source(File::new(path, FileFormat::Toml));
+        }
+        let raw = builder.build()?;
         Ok(raw.try_deserialize()?)
     }
 }
@@ -113,6 +91,6 @@ mod tests {
 
     #[test]
     fn default_config_loads() {
-        Settings::load().unwrap();
+        Settings::load(&[]).unwrap();
     }
 }

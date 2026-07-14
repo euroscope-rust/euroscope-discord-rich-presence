@@ -6,6 +6,8 @@ activity_retry_interval_s = 15
 # per 20s. Since the tracked and in range counts churn constantly, we limit the
 # number of updates.
 activity_min_push_interval_s = 5
+# Whether to treat sweatbox and playback connections as direct connections to the network. Useful for testing.
+treat_other_connections_as_direct = false
 
 # Discord-specific settings
 [discord]
@@ -21,19 +23,24 @@ client_id = "1525152891478872094"
 # How the activity will render in Discord.
 #
 # Those strings can be templated with the following placeholders:
+# - `connection_type`: one of `Idle`, `Connected`, `Playback` or `Sweatbox`.
+# - `callsign`: the controller callsign (for example, `LSAS_CTR`). May be empty
+#   if idle.
+# - `frequency`: the primary frequency (for example, `133.005`). May be empty if
+#   idle or no primary frequency selected.
+# - `rating`: the controller rating (for example, `C1`). May be empty if idle.
+# - `facility`: the facility the controller is connected as (`Observer`, `Flight
+#   Service`, `Delivery`, `Ground`, `Tower`, `Approach`, `Center`). May be empty
+#   if idle.
+# - `tracked`: the number of tracked aircraft. May be empty if idle.
+# - `in_range`: the number of aircraft in range. May be empty if idle.
 # - `action`: One of "Supervising", "Administrating", "Observing",
 #   "Controlling". This is computed depending on how the controller is connected.
 #   If connected as an observer, but holding a rating of SUP/ADM the
 #   corresponding values are used, otherwise "Observing".
 #   If connected as a controller, "Controlling" is used.
-# - `callsign`: the controller callsign (for example, `LSAS_CTR`).
-# - `rating`: the controller rating (for example, `C1`). May be empty.
-# - `frequency`: the primary frequency (for example, `133.005`). May be empty.
-# - `tracked`: the number of tracked aircraft.
-# - `in_range`: the number of aircraft in range.
-# - `radar_url`: a VATSIM Radar URL pointing to the controller (for example,
-#   `https://vatsim-radar.com/?atc=LFST_TWR`).
-# - `radio_name`: one of the names defined above (for example, `Geneva Apron`). May be empty.
+# - `radio_name`: one of the names defined above (for example, `Geneva Apron`).
+#   May be empty if not specific above.
 #
 # The templating is done with `tera`. Check out their documentation for details:
 # https://keats.github.io/tera/
@@ -43,13 +50,15 @@ client_id = "1525152891478872094"
 # You can also simply try them out and reload the configuration while the plugin
 # is loaded to see the changes live.
 #
-# To disable any of those values, set it to an empty string.
+# To disable any of those values, set it to an empty string. The consequence of
+# this is that if a template evaluates to an empty string, it is also ignored.
+#
+# All templates are trimmed of leading and trailing whitespace.
 [activity]
-# This is the only string that cannot be templated.
 name = "EuroScope"
 # One of "Playing", "Listening", "Watching", "Competing".
 activity_type = "Playing"
-# One of "Name", "State", "Details"
+# One of "Name", "State", "Details".
 status_display_type = "Details"
 details = "{{ action }} as {% if radio_name %}{{ radio_name }}{% else %}{{ callsign }}{% endif %}{% if rating %} ({{ rating }}){% endif %}"
 details_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
@@ -69,3 +78,14 @@ small_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
 [activity.buttons]
 first = { label = "See on VATSIM Radar", url = "{{ radar_url }}" }
 second = {}
+
+# Extra templates. You can use those to extract some data from the "main"
+# templates to avoid repetition. They are evaluated in the other specified here,
+# which means that later templates can use earlier ones.
+[[templates]]
+name = "radar_url"
+template = """
+{% if connection_type == 'Connected' -%}
+https://vatsim-radar.com/?atc={{ callsign }}
+{% endif -%}
+"""
