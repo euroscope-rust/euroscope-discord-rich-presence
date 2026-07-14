@@ -37,11 +37,7 @@ impl DiscordRichPresence {
     fn make_settings_path() -> Option<PathBuf> {
         if let Some(mut path) = get_plugin_path() {
             path.set_extension("toml");
-            if metadata(&path).is_ok_and(|m| m.is_file()) {
-                Some(path)
-            } else {
-                None
-            }
+            metadata(&path).is_ok_and(|m| m.is_file()).then_some(path)
         } else {
             None
         }
@@ -74,7 +70,7 @@ impl Plugin for DiscordRichPresence {
                 ctx.display_message(
                     Self::NAME,
                     "",
-                    &format!("Unable to load settings. Running with default settings."),
+                    "Unable to load settings. Running with default settings.",
                 );
                 ctx.display_message(Self::NAME, "", &err.to_string());
                 Settings::load(&[]).expect("Failed to load default settings.")
@@ -159,8 +155,7 @@ impl Plugin for DiscordRichPresence {
             let settings_path = self
                 .settings_path
                 .clone()
-                .map(Some)
-                .unwrap_or_else(|| Self::make_settings_path());
+                .map_or_else(Self::make_settings_path, Some);
             if let Some(plugin_path) = &settings_path {
                 let plugin_path = plugin_path.display().to_string();
                 ctx.display_message(Self::NAME, "", &format!("Found settings at {plugin_path}"));

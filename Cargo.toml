@@ -63,6 +63,7 @@ suspicious = { priority = -1, level = "warn" }
 # ### pedantic group
 fn_params_excessive_bools = "allow"
 many_single_char_names = "allow"
+missing_errors_doc = "allow"
 must_use_candidate = "allow"
 # ### nursery
 missing_const_for_fn = "allow"

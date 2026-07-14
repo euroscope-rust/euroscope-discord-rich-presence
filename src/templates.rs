@@ -104,7 +104,7 @@ impl Templates {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 pub enum ActivityType {
     #[default]
     Playing,
@@ -113,18 +113,18 @@ pub enum ActivityType {
     Competing,
 }
 
-impl Into<discord_rich_presence::activity::ActivityType> for ActivityType {
-    fn into(self) -> discord_rich_presence::activity::ActivityType {
-        match self {
-            Self::Playing => discord_rich_presence::activity::ActivityType::Playing,
-            Self::Listening => discord_rich_presence::activity::ActivityType::Listening,
-            Self::Watching => discord_rich_presence::activity::ActivityType::Watching,
-            Self::Competing => discord_rich_presence::activity::ActivityType::Competing,
+impl From<ActivityType> for discord_rich_presence::activity::ActivityType {
+    fn from(val: ActivityType) -> Self {
+        match val {
+            ActivityType::Playing => Self::Playing,
+            ActivityType::Listening => Self::Listening,
+            ActivityType::Watching => Self::Watching,
+            ActivityType::Competing => Self::Competing,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 pub enum StatusDisplayType {
     #[default]
     Name,
@@ -132,12 +132,12 @@ pub enum StatusDisplayType {
     Details,
 }
 
-impl Into<discord_rich_presence::activity::StatusDisplayType> for StatusDisplayType {
-    fn into(self) -> discord_rich_presence::activity::StatusDisplayType {
-        match self {
-            Self::Name => discord_rich_presence::activity::StatusDisplayType::Name,
-            Self::State => discord_rich_presence::activity::StatusDisplayType::State,
-            Self::Details => discord_rich_presence::activity::StatusDisplayType::Details,
+impl From<StatusDisplayType> for discord_rich_presence::activity::StatusDisplayType {
+    fn from(val: StatusDisplayType) -> Self {
+        match val {
+            StatusDisplayType::Name => Self::Name,
+            StatusDisplayType::State => Self::State,
+            StatusDisplayType::Details => Self::Details,
         }
     }
 }

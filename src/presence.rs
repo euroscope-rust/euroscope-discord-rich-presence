@@ -20,7 +20,8 @@ use crate::{
 
 pub enum PresenceMsg {
     Update(ConnectionInformation),
-    RefreshSettings(Settings, Templates),
+    // Boxed to keep the enum small
+    RefreshSettings(Box<(Settings, Templates)>),
     Ping,
     Shutdown,
 }
@@ -39,7 +40,7 @@ impl Presence {
     ) -> Self {
         let (presence_tx, presence_rx) = mpsc::channel();
         let handle = Some(thread::spawn(move || {
-            run(main_tx, &presence_rx, settings, templates, info)
+            run(&main_tx, &presence_rx, settings, templates, info);
         }));
         Self {
             presence_tx,
@@ -54,7 +55,7 @@ impl Presence {
             return true;
         }
 
-        !self.presence_tx.send(PresenceMsg::Ping).is_ok()
+        self.presence_tx.send(PresenceMsg::Ping).is_err()
     }
 
     pub fn send_update(&self, info: ConnectionInformation) -> bool {
@@ -63,7 +64,9 @@ impl Presence {
 
     pub fn refresh_settings(&self, settings: Settings, templates: Templates) -> bool {
         self.presence_tx
-            .send(PresenceMsg::RefreshSettings(settings, templates))
+            .send(PresenceMsg::RefreshSettings(Box::new((
+                settings, templates,
+            ))))
             .is_ok()
     }
 }
@@ -89,7 +92,7 @@ impl Drop for Presence {
 /// the main thread hands us a state to show. Connecting up front is allowed and
 /// only makes that first push faster.
 fn run(
-    main_tx: mpsc::Sender<MainMsg>,
+    main_tx: &mpsc::Sender<MainMsg>,
     presence_rx: &mpsc::Receiver<PresenceMsg>,
     mut settings: Settings,
     mut templates: Templates,
@@ -99,7 +102,7 @@ fn run(
 
     // Connect ahead of the first message so the first push is immediate. A
     // failure here is fine; we retry inside the loop on the retry interval.
-    let mut connected = connect(&main_tx, &mut client);
+    let mut connected = connect(main_tx, &mut client);
     let mut last_connect = Instant::now();
 
     let mut start_time = now();
@@ -129,23 +132,26 @@ fn run(
         };
 
         let msg = match wait {
-            None => match presence_rx.recv() {
-                Ok(msg) => Some(msg),
-                Err(_) => {
-                    let _ = main_tx.send(MainMsg::Log(format!(
+            None => {
+                if let Ok(msg) = presence_rx.recv() {
+                    Some(msg)
+                } else {
+                    let _ = main_tx.send(MainMsg::Log(
                         "Failed to recv from the main thread. Shutting down Discord thread."
-                    )));
+                            .to_owned(),
+                    ));
                     break;
                 }
-            },
+            }
             Some(wait) => match presence_rx.recv_timeout(wait) {
                 Ok(msg) => Some(msg),
                 // Timed out: fall through to the (re)connect / push logic below.
                 Err(mpsc::RecvTimeoutError::Timeout) => None,
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    let _ = main_tx.send(MainMsg::Log(format!(
+                    let _ = main_tx.send(MainMsg::Log(
                         "Failed to recv from the main thread. Shutting down Discord thread."
-                    )));
+                            .to_owned(),
+                    ));
                     break;
                 }
             },
@@ -161,7 +167,8 @@ fn run(
                     dirty = true;
                 }
             }
-            Some(PresenceMsg::RefreshSettings(s, t)) => {
+            Some(PresenceMsg::RefreshSettings(boxed)) => {
+                let (s, t) = *boxed;
                 // A changed client id makes the current connection useless.
                 if s.discord.client_id != settings.discord.client_id {
                     let _ = client.close();
@@ -185,14 +192,14 @@ fn run(
 
         // (Re)connect if needed, no more than once per retry interval.
         if !connected && last_connect.elapsed() >= retry_interval {
-            connected = connect(&main_tx, &mut client);
+            connected = connect(main_tx, &mut client);
             last_connect = Instant::now();
         }
 
         // Push the latest state once the min-push window has elapsed.
         if connected && last_push.elapsed() >= min_push_interval {
             match set_activity(
-                &main_tx,
+                main_tx,
                 &settings,
                 &templates,
                 &mut client,
@@ -246,6 +253,7 @@ fn set_activity(
 }
 
 #[inline]
+#[expect(clippy::too_many_lines, reason = "Couldn't care less.")]
 fn make_activity<'a>(
     main_tx: &mpsc::Sender<MainMsg>,
     settings: &'a Settings,
@@ -253,7 +261,7 @@ fn make_activity<'a>(
     info: &'a ConnectionInformation,
     start_time: i64,
 ) -> Result<Activity<'a>> {
-    let ctx = templates.make_context(&settings, &info)?;
+    let ctx = templates.make_context(settings, info)?;
 
     let render_string = |name| match templates.render(name, &ctx) {
         Ok(data) if !data.is_empty() => Some(data),
@@ -268,10 +276,7 @@ fn make_activity<'a>(
 
     let name = render_string("name");
     let activity_type = match templates.render("activity_type", &ctx) {
-        Ok(data) if !data.is_empty() => match serde_json::from_str::<ActivityType>(&data) {
-            Ok(data) => Some(data),
-            Err(_) => None,
-        },
+        Ok(data) if !data.is_empty() => serde_json::from_str::<ActivityType>(&data).ok(),
         Ok(_) => None,
         Err(err) => {
             let _ = main_tx.send(MainMsg::Log(format!(
@@ -281,10 +286,7 @@ fn make_activity<'a>(
         }
     };
     let status_display_type = match templates.render("status_display_type", &ctx) {
-        Ok(data) if !data.is_empty() => match serde_json::from_str::<StatusDisplayType>(&data) {
-            Ok(data) => Some(data),
-            Err(_) => None,
-        },
+        Ok(data) if !data.is_empty() => serde_json::from_str::<StatusDisplayType>(&data).ok(),
         Ok(_) => None,
         Err(err) => {
             let _ = main_tx.send(MainMsg::Log(format!(

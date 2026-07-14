@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 const DEFAULT_CONFIG: &str = include_str!("../default.toml");
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct Settings {
     pub general: GeneralSettings,
     pub discord: DiscordSettings,
@@ -15,19 +15,19 @@ pub struct Settings {
     pub templates: Vec<TemplateSettings>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct GeneralSettings {
     pub activity_retry_interval_s: u64,
     pub activity_min_push_interval_s: u64,
     pub treat_other_connections_as_direct: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct DiscordSettings {
     pub client_id: String,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct ActivitySettings {
     pub name: String,
     pub activity_type: String,
@@ -40,7 +40,7 @@ pub struct ActivitySettings {
     pub buttons: ActivityButtonsSettings,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct ActivityAssetsSettings {
     pub large_image: String,
     pub large_text: String,
@@ -50,13 +50,13 @@ pub struct ActivityAssetsSettings {
     pub small_url: String,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct ActivityButtonsSettings {
     pub first: ActivityButtonSettings,
     pub second: ActivityButtonSettings,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct ActivityButtonSettings {
     #[serde(default)]
     pub label: String,
@@ -64,7 +64,7 @@ pub struct ActivityButtonSettings {
     pub url: String,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct TemplateSettings {
     pub name: String,
     pub template: String,
