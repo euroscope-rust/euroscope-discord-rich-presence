@@ -1,6 +1,6 @@
 use std::{
     sync::mpsc,
-    thread::{self, JoinHandle, sleep},
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -79,6 +79,15 @@ impl Drop for Presence {
 }
 
 /// Worker loop. Owns the Discord client; the main thread never touches it.
+///
+/// The loop coalesces updates: it never pushes to Discord more than once per
+/// `activity_min_push_interval_s`, always sending the most recent state when
+/// the window elapses. If the connection to Discord drops, it reconnects at
+/// most once per `activity_retry_interval_s`.
+///
+/// The first iteration always blocks on `recv`, so nothing is published before
+/// the main thread hands us a state to show. Connecting up front is allowed and
+/// only makes that first push faster.
 fn run(
     main_tx: mpsc::Sender<MainMsg>,
     presence_rx: &mpsc::Receiver<PresenceMsg>,
@@ -88,52 +97,139 @@ fn run(
 ) {
     let mut client = DiscordIpcClient::new(settings.discord.client_id.clone());
 
+    // Connect ahead of the first message so the first push is immediate. A
+    // failure here is fine; we retry inside the loop on the retry interval.
+    let mut connected = connect(&main_tx, &mut client);
+    let mut last_connect = Instant::now();
+
     let mut start_time = now();
-    let mut last_update =
-        Instant::now() - Duration::from_secs(settings.general.activity_min_push_interval_s + 1);
+    // Seed the last push far enough in the past that the first update is sent
+    // without waiting on the min-push interval.
+    let mut last_push = Instant::now()
+        .checked_sub(Duration::from_secs(
+            settings.general.activity_min_push_interval_s,
+        ))
+        .unwrap_or_else(Instant::now);
+    let mut dirty = false;
 
     loop {
-        match presence_rx.recv() {
-            Ok(PresenceMsg::Update(i)) => {
+        let retry_interval = Duration::from_secs(settings.general.activity_retry_interval_s);
+        let min_push_interval = Duration::from_secs(settings.general.activity_min_push_interval_s);
+
+        // How long to wait for the next message. When we owe a push we wake
+        // ourselves to send it: after the min-push window if connected, or after
+        // the retry window if we still need to (re)connect. With nothing owed we
+        // block until a message arrives.
+        let wait = if !dirty {
+            None
+        } else if connected {
+            Some(min_push_interval.saturating_sub(last_push.elapsed()))
+        } else {
+            Some(retry_interval.saturating_sub(last_connect.elapsed()))
+        };
+
+        let msg = match wait {
+            None => match presence_rx.recv() {
+                Ok(msg) => Some(msg),
+                Err(_) => {
+                    let _ = main_tx.send(MainMsg::Log(format!(
+                        "Failed to recv from the main thread. Shutting down Discord thread."
+                    )));
+                    break;
+                }
+            },
+            Some(wait) => match presence_rx.recv_timeout(wait) {
+                Ok(msg) => Some(msg),
+                // Timed out: fall through to the (re)connect / push logic below.
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    let _ = main_tx.send(MainMsg::Log(format!(
+                        "Failed to recv from the main thread. Shutting down Discord thread."
+                    )));
+                    break;
+                }
+            },
+        };
+
+        match msg {
+            Some(PresenceMsg::Update(i)) => {
                 if i != info {
                     if i.label(&settings) != info.label(&settings) {
                         start_time = now();
                     }
                     info = i;
-                    // TODO: handle error
-                    if let Err(err) = set_activity(
-                        &main_tx,
-                        &settings,
-                        &templates,
-                        &mut client,
-                        &info,
-                        start_time,
-                    ) {
-                        let _ = main_tx.send(MainMsg::Log(format!(
-                            "Failed to set Discord presence: {err}"
-                        )));
-                    }
-                    last_update = Instant::now();
+                    dirty = true;
                 }
             }
-            Ok(PresenceMsg::RefreshSettings(s, t)) => {
-                templates = t;
+            Some(PresenceMsg::RefreshSettings(s, t)) => {
+                // A changed client id makes the current connection useless.
+                if s.discord.client_id != settings.discord.client_id {
+                    let _ = client.close();
+                    client = DiscordIpcClient::new(s.discord.client_id.clone());
+                    connected = false;
+                }
                 settings = s;
-                continue;
+                templates = t;
+                // Re-render and re-push with the new templates.
+                dirty = true;
             }
-            Ok(PresenceMsg::Shutdown) => break,
-            Ok(PresenceMsg::Ping) => continue,
-            Err(_) => {}
+            Some(PresenceMsg::Shutdown) => break,
+            // A ping keeps the channel warm; a timeout just drops us into the
+            // (re)connect / push logic below.
+            Some(PresenceMsg::Ping) | None => {}
         }
 
-        sleep(Duration::from_secs(
-            settings.general.activity_min_push_interval_s,
-        ));
+        if !dirty {
+            continue;
+        }
+
+        // (Re)connect if needed, no more than once per retry interval.
+        if !connected && last_connect.elapsed() >= retry_interval {
+            connected = connect(&main_tx, &mut client);
+            last_connect = Instant::now();
+        }
+
+        // Push the latest state once the min-push window has elapsed.
+        if connected && last_push.elapsed() >= min_push_interval {
+            match set_activity(
+                &main_tx,
+                &settings,
+                &templates,
+                &mut client,
+                &info,
+                start_time,
+            ) {
+                Ok(()) => {
+                    dirty = false;
+                    last_push = Instant::now();
+                }
+                Err(err) => {
+                    let _ = main_tx.send(MainMsg::Log(format!(
+                        "Failed to set Discord presence: {err}"
+                    )));
+                    // The write failed, so assume the pipe dropped and let the
+                    // retry interval govern the next reconnect attempt.
+                    connected = false;
+                }
+            }
+        }
     }
 
     let _ = client.close();
 }
 
+#[inline]
+fn connect(main_tx: &mpsc::Sender<MainMsg>, client: &mut DiscordIpcClient) -> bool {
+    match client.connect() {
+        Ok(()) => true,
+        Err(err) => {
+            let _ = main_tx.send(MainMsg::Log(format!("Failed to connect to Discord: {err}")));
+            false
+        }
+    }
+}
+
+#[inline]
 fn set_activity(
     main_tx: &mpsc::Sender<MainMsg>,
     settings: &Settings,
@@ -149,6 +245,7 @@ fn set_activity(
     Ok(())
 }
 
+#[inline]
 fn make_activity<'a>(
     main_tx: &mpsc::Sender<MainMsg>,
     settings: &'a Settings,
@@ -283,6 +380,7 @@ fn make_activity<'a>(
     Ok(activity)
 }
 
+#[inline]
 fn now() -> i64 {
     Utc::now().timestamp_millis()
 }
@@ -292,9 +390,9 @@ mod tests {
     use std::sync::mpsc;
 
     use super::{make_activity, now};
-    use crate::controller_information::ConnectionInformation;
-    use crate::settings::Settings;
-    use crate::templates::Templates;
+    use crate::{
+        controller_information::ConnectionInformation, settings::Settings, templates::Templates,
+    };
 
     #[test]
     fn make_activity_idle() {

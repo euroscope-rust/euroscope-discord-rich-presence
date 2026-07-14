@@ -21,7 +21,7 @@ use crate::{
     templates::Templates, utils::get_plugin_path,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MainMsg {
     Log(String),
 }
@@ -141,15 +141,15 @@ impl Plugin for DiscordRichPresence {
         }
         if !self.thread_seen_dead {
             let info = ConnectionInformation::from_ctx(ctx);
-            if let Some(info) = info {
-                if !self.presence.send_update(info) {
-                    ctx.display_message(
-                        Self::NAME,
-                        "",
-                        "Discord presence update thread has died. This is a bug.",
-                    );
-                    self.thread_seen_dead = true;
-                }
+            if let Some(info) = info
+                && !self.presence.send_update(info)
+            {
+                ctx.display_message(
+                    Self::NAME,
+                    "",
+                    "Discord presence update thread has died. This is a bug.",
+                );
+                self.thread_seen_dead = true;
             }
         }
     }
@@ -167,11 +167,7 @@ impl Plugin for DiscordRichPresence {
                 match Settings::load(&[&plugin_path]) {
                     Ok(settings) => match Templates::new(&settings) {
                         Ok(templates) => {
-                            ctx.display_message(
-                                Self::NAME,
-                                "",
-                                &format!("Successfully reloaded settings."),
-                            );
+                            ctx.display_message(Self::NAME, "", "Successfully reloaded settings.");
                             if !self.presence.refresh_settings(settings, templates) {
                                 ctx.display_message(
                                     Self::NAME,
@@ -185,7 +181,7 @@ impl Plugin for DiscordRichPresence {
                             ctx.display_message(
                                 Self::NAME,
                                 "",
-                                &format!("Failed to load templates. Keeping current settings."),
+                                "Failed to load templates. Keeping current settings.",
                             );
                             ctx.display_message(Self::NAME, "", &err.to_string());
                         }
@@ -194,18 +190,18 @@ impl Plugin for DiscordRichPresence {
                         ctx.display_message(
                             Self::NAME,
                             "",
-                            &format!("Unable to load settings. Keeping current settings."),
+                            "Unable to load settings. Keeping current settings.",
                         );
                         ctx.display_message(Self::NAME, "", &err.to_string());
                     }
-                };
+                }
             } else {
                 ctx.display_message(
                     Self::NAME,
                     "",
                     "Unable to find plugin path. Keeping current settings.",
                 );
-            };
+            }
 
             true
         } else {

@@ -1,8 +1,36 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde::Deserialize;
 use tera::{Context, Tera};
 
 use crate::{controller_information::ConnectionInformation, settings::Settings};
+
+const DISALLOWED_NAMES: &[&str] = &[
+    "connection_type",
+    "callsign",
+    "frequency",
+    "rating",
+    "facility",
+    "tracked",
+    "in_range",
+    "radio_name",
+    "name",
+    "activity_type",
+    "status_display_type",
+    "details",
+    "details_url",
+    "state",
+    "state_url",
+    "assets_large_image",
+    "assets_large_text",
+    "assets_large_url",
+    "assets_small_image",
+    "assets_small_text",
+    "assets_small_url",
+    "buttons_first_label",
+    "buttons_first_url",
+    "buttons_second_label",
+    "buttons_second_url",
+];
 
 pub struct Templates {
     tera: Tera,
@@ -44,6 +72,9 @@ impl Templates {
         tera.add_raw_template("buttons_second_url", &settings.activity.buttons.second.url)?;
 
         for extra in &settings.templates {
+            if DISALLOWED_NAMES.iter().any(|dn| dn == &extra.name) {
+                return Err(anyhow!("Template name {} is not allowed", extra.name));
+            }
             extra_templates.push(extra.name.clone());
             tera.add_raw_template(&extra.name, &extra.template)?;
         }
@@ -113,9 +144,8 @@ impl Into<discord_rich_presence::activity::StatusDisplayType> for StatusDisplayT
 
 #[cfg(test)]
 mod tests {
-    use crate::{controller_information::ConnectionInformation, settings::Settings};
-
     use super::Templates;
+    use crate::{controller_information::ConnectionInformation, settings::Settings};
 
     #[test]
     fn default_templates_load() {

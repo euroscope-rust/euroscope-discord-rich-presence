@@ -1,10 +1,11 @@
 # General app settings
 [general]
-# When our connection to Discord drops, how often to retry connecting.
+# When our connection to Discord drops, how often to retry connecting in
+# seconds.
 activity_retry_interval_s = 15
-# Minimum interval between presence pushes. Discord rate-limits updates to ~5
-# per 20s. Since the tracked and in range counts churn constantly, we limit the
-# number of updates.
+# Minimum interval between presence pushes in seconds. Discord rate-limits
+# updates to ~5 per 20s. Since the tracked and in range counts churn constantly,
+# we limit the number of updates.
 activity_min_push_interval_s = 5
 # Whether to treat sweatbox and playback connections as direct connections to
 # the network. Useful for testing.
@@ -13,7 +14,8 @@ treat_other_connections_as_direct = false
 
 # Discord-specific settings
 [discord]
-# The Discord application client ID. Defaults to a generic application with a few assets provided.
+# The Discord application client ID. Defaults to a generic application with a
+# few assets provided (see README).
 client_id = "1525152891478872094"
 
 # A map of radio names for easier rendering of station names.
@@ -58,18 +60,18 @@ name = "EuroScope"
 activity_type = "Playing"
 # One of "Name", "State", "Details".
 status_display_type = "Details"
-details = "{{ action }} as {% if radio_name %}{{ radio_name }}{% else %}{{ callsign }}{% endif %}{% if rating %} ({{ rating }}){% endif %}"
-details_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
-state = "{{ tracked }} tracked · {{ in_range }} in range · {% if frequency %}{{ frequency }} MHz{% else %}No primary frequency{% endif %}"
-state_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
+details = "{{ description }}"
+details_url = "{{ radar_url }}"
+state = "{{ extra_info }}"
+state_url = "{{ radar_url }}"
 
 [activity.assets]
 large_image = "vatsim"
-large_text = "{{ action }} as {% if radio_name %}{{ radio_name }}{% else %}{{ callsign }}{% endif %}{% if rating %} ({{ rating }}){% endif %}"
-large_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
+large_text = "{{ description }}"
+large_url = "{{ radar_url }}"
 small_image = ""
-small_text = "{% if frequency %}{{ frequency }} MHz{% else %}No primary frequency{% endif %}"
-small_url = "{% if action == 'Controlling' %}{{ radar_url }}{% endif %}"
+small_text = "{{ frequency_info }}"
+small_url = "{{ radar_url }}"
 
 # Discord only allows two buttons, so no `third`. To disable a button, set it to
 # `{}`, like the second one is done by default.
@@ -80,24 +82,26 @@ second = {}
 # Extra templates. You can use those to extract some data from the "main"
 # templates to avoid repetition. They are evaluated in the other specified here,
 # which means that later templates can use earlier ones.
+# Some names are forbidden and will result in an error. You can find those in
+# src/templates.rs under the `DISALLOWED_NAMES` list.
 [[templates]]
 # Name of the template and how you'll refer to it in other places.
 name = "action"
 # Extra fields are ignored. Use them for documentation!
-description = "What the controller is doing. Only set if the controller is not idle."
+description = "What the controller is doing. Empty if idle."
 template = """
 {% if connection_type == 'Sweatbox' %}
-Sweating
+Sweating on
 {% elif connection_type == 'Playback' %}
 Playbacking
 {% else %}
     {% if facility == 'Observer' %}
         {% if rating == 'SUP' %}
-            Supervising
+            Supervising as
         {% elif rating == 'ADM' %}
-            Administrating
+            Administrating as
         {% else %}
-            Observing
+            Observing as
         {% endif %}
     {% else %}
     Controlling
@@ -108,8 +112,41 @@ Playbacking
 # Another example, where we use a previously-defined template, `action`.
 [[templates]]
 name = "radar_url"
+description = "VATSIM Radar URL pointing to the controller."
 template = """
 {% if action == 'Controlling' %}
 https://vatsim-radar.com/?atc={{ callsign }}
 {% endif -%}
+"""
+
+[[templates]]
+name = "description"
+description = "The controller's description we show as details by default."
+template = """
+{% if connection_type == 'Idle' %}
+    TODO
+{% else %}
+    {# Controlling LSGG_TWR (S2) #}
+    {{ action }} {% if radio_name %}{{ radio_name }}{% else %}{{ callsign }}{% endif %}{% if rating != '' %} ({{ rating }}){% endif %}
+{% endif %}
+"""
+
+[[templates]]
+name = "frequency_info"
+description = "The controller's frequency spelled out."
+template = """
+{% if frequency %}
+    {{ frequency }} MHz
+{% else %}
+    No primary frequency
+{% endif %}
+"""
+
+[[templates]]
+name = "extra_info"
+description = "Extra information about the controller's session. Empty if idle"
+template = """
+{% if connection_type != 'Idle' %}
+    {{ tracked }} tracked · {{ in_range }} in range · {{ frequency_info }}
+{% endif %}
 """
