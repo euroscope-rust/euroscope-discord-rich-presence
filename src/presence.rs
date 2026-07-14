@@ -1,5 +1,5 @@
 use std::{
-    sync::mpsc::{self, RecvTimeoutError},
+    sync::mpsc,
     thread::{self, JoinHandle, sleep},
     time::{Duration, Instant},
 };
@@ -9,14 +9,13 @@ use chrono::Utc;
 use discord_rich_presence::{
     DiscordIpc as _, DiscordIpcClient,
     activity::{Activity, Assets, Button, Timestamps},
-    error::Error as DiscordError,
 };
 
 use crate::{
     MainMsg,
     controller_information::ConnectionInformation,
     settings::Settings,
-    template::{ActivityType, StatusDisplayType, Templates},
+    templates::{ActivityType, StatusDisplayType, Templates},
 };
 
 pub enum PresenceMsg {
@@ -143,6 +142,20 @@ fn set_activity(
     info: &ConnectionInformation,
     start_time: i64,
 ) -> Result<()> {
+    let activity = make_activity(main_tx, settings, templates, info, start_time)?;
+
+    client.set_activity(activity)?;
+
+    Ok(())
+}
+
+fn make_activity<'a>(
+    main_tx: &mpsc::Sender<MainMsg>,
+    settings: &'a Settings,
+    templates: &'a Templates,
+    info: &'a ConnectionInformation,
+    start_time: i64,
+) -> Result<Activity<'a>> {
     let ctx = templates.make_context(&settings, &info)?;
 
     let render_string = |name| match templates.render(name, &ctx) {
@@ -267,11 +280,34 @@ fn set_activity(
 
     activity = activity.timestamps(Timestamps::new().start(start_time));
 
-    client.set_activity(activity)?;
-
-    Ok(())
+    Ok(activity)
 }
 
 fn now() -> i64 {
     Utc::now().timestamp_millis()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use super::{make_activity, now};
+    use crate::controller_information::ConnectionInformation;
+    use crate::settings::Settings;
+    use crate::templates::Templates;
+
+    #[test]
+    fn make_activity_idle() {
+        let (main_tx, main_rx) = mpsc::channel();
+        let settings = Settings::load(&[]).expect("settings");
+        let templates = Templates::new(&settings).expect("templates");
+        let start_time = now();
+
+        let info = ConnectionInformation::Idle;
+
+        make_activity(&main_tx, &settings, &templates, &info, start_time)
+            .expect("Failed to create activity");
+
+        assert_eq!(Err(mpsc::TryRecvError::Empty), main_rx.try_recv());
+    }
 }

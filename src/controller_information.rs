@@ -1,5 +1,4 @@
 use euroscope::{ConnectionType, Context, ControllerRating, Facility};
-use serde::Deserialize;
 
 use crate::settings::Settings;
 
@@ -38,7 +37,7 @@ impl ControllerInformation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub enum ConnectionInformation {
     #[default]
     Idle,
@@ -48,18 +47,25 @@ pub enum ConnectionInformation {
 }
 
 impl ConnectionInformation {
-    pub fn from_ctx(ctx: &Context) -> Self {
+    pub fn from_ctx(ctx: &Context) -> Option<Self> {
         match ctx.connection_type() {
-            ConnectionType::Direct => ControllerInformation::from_ctx(ctx)
-                .map(Self::Connected)
-                .unwrap_or_default(),
-            ConnectionType::Sweatbox => ControllerInformation::from_ctx(ctx)
-                .map(Self::Sweatbox)
-                .unwrap_or_default(),
-            ConnectionType::Playback => ControllerInformation::from_ctx(ctx)
-                .map(Self::Playback)
-                .unwrap_or_default(),
-            _ => Self::Idle,
+            ConnectionType::Direct => Some(
+                ControllerInformation::from_ctx(ctx)
+                    .map(Self::Connected)
+                    .unwrap_or_default(),
+            ),
+            ConnectionType::Sweatbox => Some(
+                ControllerInformation::from_ctx(ctx)
+                    .map(Self::Sweatbox)
+                    .unwrap_or_default(),
+            ),
+            ConnectionType::Playback => Some(
+                ControllerInformation::from_ctx(ctx)
+                    .map(Self::Playback)
+                    .unwrap_or_default(),
+            ),
+            ConnectionType::None => Some(Self::Idle),
+            _ => None,
         }
     }
 
@@ -108,5 +114,38 @@ impl ConnectionInformation {
             }
             Self::Idle => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use euroscope::{ControllerRating, Facility};
+
+    use crate::{
+        controller_information::{ConnectionInformation, ControllerInformation},
+        settings::Settings,
+    };
+
+    fn empty_controller_info() -> ControllerInformation {
+        ControllerInformation {
+            callsign: String::new(),
+            frequency: 0.0_f64,
+            rating: ControllerRating::Unknown,
+            facility: Facility::Observer,
+            tracked: 0,
+            in_range: 0,
+        }
+    }
+
+    #[test]
+    fn others_as_direct() {
+        let mut settings = Settings::load(&[]).expect("settings");
+        settings.general.treat_other_connections_as_direct = true;
+
+        let info = ConnectionInformation::Sweatbox(empty_controller_info());
+        assert_eq!(info.label(&settings), "Connected");
+
+        let info = ConnectionInformation::Playback(empty_controller_info());
+        assert_eq!(info.label(&settings), "Connected");
     }
 }

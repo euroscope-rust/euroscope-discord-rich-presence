@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::collections::HashMap;
 
 use anyhow::Result;
 use config::{Config, File, FileFormat};
@@ -91,6 +88,6 @@ mod tests {
 
     #[test]
     fn default_config_loads() {
-        Settings::load(&[]).unwrap();
+        Settings::load(&[]).expect("Failed to load default settings");
     }
 }

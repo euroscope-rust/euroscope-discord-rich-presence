@@ -9,7 +9,7 @@
 pub mod controller_information;
 pub mod presence;
 pub mod settings;
-pub mod template;
+pub mod templates;
 pub mod utils;
 
 use std::{fs::metadata, path::PathBuf, sync::mpsc};
@@ -18,9 +18,10 @@ use euroscope::{Context, Plugin, register_plugin};
 
 use crate::{
     controller_information::ConnectionInformation, presence::Presence, settings::Settings,
-    template::Templates, utils::get_plugin_path,
+    templates::Templates, utils::get_plugin_path,
 };
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum MainMsg {
     Log(String),
 }
@@ -105,7 +106,7 @@ impl Plugin for DiscordRichPresence {
 
         let (main_tx, main_rx) = mpsc::channel();
 
-        let presence = Presence::start(main_tx, settings, templates, info);
+        let presence = Presence::start(main_tx, settings, templates, info.unwrap_or_default());
         Self {
             settings_path,
             presence,
@@ -115,6 +116,21 @@ impl Plugin for DiscordRichPresence {
     }
 
     fn on_timer(&mut self, ctx: &mut Context, _counter: i32) {
+        match self.main_rx.try_recv() {
+            Ok(MainMsg::Log(msg)) => {
+                ctx.display_message(Self::NAME, "", &msg);
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.thread_seen_dead = true;
+                ctx.display_message(
+                    Self::NAME,
+                    "",
+                    "Discord presence update thread has died. This is a bug.",
+                );
+            }
+        }
+
         if !self.thread_seen_dead && self.presence.is_thread_dead() {
             self.thread_seen_dead = true;
             ctx.display_message(
@@ -125,13 +141,15 @@ impl Plugin for DiscordRichPresence {
         }
         if !self.thread_seen_dead {
             let info = ConnectionInformation::from_ctx(ctx);
-            if !self.presence.send_update(info) {
-                ctx.display_message(
-                    Self::NAME,
-                    "",
-                    "Discord presence update thread has died. This is a bug.",
-                );
-                self.thread_seen_dead = true;
+            if let Some(info) = info {
+                if !self.presence.send_update(info) {
+                    ctx.display_message(
+                        Self::NAME,
+                        "",
+                        "Discord presence update thread has died. This is a bug.",
+                    );
+                    self.thread_seen_dead = true;
+                }
             }
         }
     }

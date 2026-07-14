@@ -6,7 +6,9 @@ activity_retry_interval_s = 15
 # per 20s. Since the tracked and in range counts churn constantly, we limit the
 # number of updates.
 activity_min_push_interval_s = 5
-# Whether to treat sweatbox and playback connections as direct connections to the network. Useful for testing.
+# Whether to treat sweatbox and playback connections as direct connections to
+# the network. Useful for testing.
+# If true, `connection_type` will show up as `Connected` instead of the others.
 treat_other_connections_as_direct = false
 
 # Discord-specific settings
@@ -28,17 +30,13 @@ client_id = "1525152891478872094"
 #   if idle.
 # - `frequency`: the primary frequency (for example, `133.005`). May be empty if
 #   idle or no primary frequency selected.
-# - `rating`: the controller rating (for example, `C1`). May be empty if idle.
+# - `rating`: the controller rating (`OBS`, `S1`, `S2`, `S3`, `C1`, `C2`, `C3`,
+#   `I3`, `I2`, `I3`, `SUP`, `ADM`). May be empty if idle.
 # - `facility`: the facility the controller is connected as (`Observer`, `Flight
 #   Service`, `Delivery`, `Ground`, `Tower`, `Approach`, `Center`). May be empty
 #   if idle.
 # - `tracked`: the number of tracked aircraft. May be empty if idle.
 # - `in_range`: the number of aircraft in range. May be empty if idle.
-# - `action`: One of "Supervising", "Administrating", "Observing",
-#   "Controlling". This is computed depending on how the controller is connected.
-#   If connected as an observer, but holding a rating of SUP/ADM the
-#   corresponding values are used, otherwise "Observing".
-#   If connected as a controller, "Controlling" is used.
 # - `radio_name`: one of the names defined above (for example, `Geneva Apron`).
 #   May be empty if not specific above.
 #
@@ -83,9 +81,35 @@ second = {}
 # templates to avoid repetition. They are evaluated in the other specified here,
 # which means that later templates can use earlier ones.
 [[templates]]
+# Name of the template and how you'll refer to it in other places.
+name = "action"
+# Extra fields are ignored. Use them for documentation!
+description = "What the controller is doing. Only set if the controller is not idle."
+template = """
+{% if connection_type == 'Sweatbox' %}
+Sweating
+{% elif connection_type == 'Playback' %}
+Playbacking
+{% else %}
+    {% if facility == 'Observer' %}
+        {% if rating == 'SUP' %}
+            Supervising
+        {% elif rating == 'ADM' %}
+            Administrating
+        {% else %}
+            Observing
+        {% endif %}
+    {% else %}
+    Controlling
+    {% endif %}
+{% endif %}
+"""
+
+# Another example, where we use a previously-defined template, `action`.
+[[templates]]
 name = "radar_url"
 template = """
-{% if connection_type == 'Connected' -%}
+{% if action == 'Controlling' %}
 https://vatsim-radar.com/?atc={{ callsign }}
 {% endif -%}
 """

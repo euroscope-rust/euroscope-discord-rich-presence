@@ -113,7 +113,7 @@ impl Into<discord_rich_presence::activity::StatusDisplayType> for StatusDisplayT
 
 #[cfg(test)]
 mod tests {
-    use crate::settings::Settings;
+    use crate::{controller_information::ConnectionInformation, settings::Settings};
 
     use super::Templates;
 
@@ -121,5 +121,17 @@ mod tests {
     fn default_templates_load() {
         let settings = Settings::load(&[]).expect("Failed to load default settings.");
         Templates::new(&settings).expect("Failed to load default templates.");
+    }
+
+    #[test]
+    fn make_context_idle() {
+        let settings = Settings::load(&[]).expect("Failed to load default settings.");
+        let templates = Templates::new(&settings).expect("Failed to load default templates.");
+
+        let info = ConnectionInformation::Idle;
+
+        templates
+            .make_context(&settings, &info)
+            .expect("Failed to create context");
     }
 }
