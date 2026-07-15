@@ -32,11 +32,7 @@ pub struct Presence {
 }
 
 impl Presence {
-    pub fn start(
-        main_tx: mpsc::Sender<MainMsg>,
-        settings: Settings,
-        templates: Templates,
-    ) -> Self {
+    pub fn start(main_tx: mpsc::Sender<MainMsg>, settings: Settings, templates: Templates) -> Self {
         let (presence_tx, presence_rx) = mpsc::channel();
         let handle = Some(thread::spawn(move || {
             run(&main_tx, &presence_rx, settings, templates);
@@ -200,10 +196,14 @@ fn run(
         if !connected && last_connect.elapsed() >= retry_interval {
             connected = connect(main_tx, &mut client);
             last_connect = Instant::now();
+            if !connected {
+                // Still down; the retry interval governs the next attempt.
+                continue;
+            }
         }
 
         // Push the latest state once the min-push window has elapsed.
-        if connected && last_push.elapsed() >= min_push_interval {
+        if last_push.elapsed() >= min_push_interval {
             match set_activity(
                 main_tx,
                 &settings,
@@ -255,6 +255,14 @@ fn set_activity(
     let activity = make_activity(main_tx, settings, templates, info, start_time)?;
 
     client.set_activity(activity)?;
+
+    // Discord replies to SET_ACTIVITY with a frame describing the result. The
+    // crate's `set_activity` never reads it, so a rejected payload otherwise
+    // looks like success; surface it so we can see accept/reject and why.
+    let (_, response) = client.recv()?;
+    let _ = main_tx.send(MainMsg::Log(format!(
+        "Discord SET_ACTIVITY response: {response}"
+    )));
 
     Ok(())
 }
@@ -359,9 +367,9 @@ fn make_activity<'a>(
     activity = activity.assets(assets);
 
     let buttons_first_label = render_string("buttons_first_label");
-    let buttons_first_url = render_string("buttons_first_label");
+    let buttons_first_url = render_string("buttons_first_url");
     let buttons_second_label = render_string("buttons_second_label");
-    let buttons_second_url = render_string("buttons_second_label");
+    let buttons_second_url = render_string("buttons_second_url");
 
     let make_button = |label: Option<String>, url: Option<String>| {
         if let Some(label) = label

@@ -94,7 +94,7 @@ impl Templates {
         info.enrich_context(&mut ctx, settings);
         for extra in &self.extra_templates {
             let rendered = self.tera.render(extra, &ctx)?;
-            ctx.insert(extra.clone(), &rendered);
+            ctx.insert(extra.clone(), rendered.trim());
         }
         Ok(ctx)
     }
