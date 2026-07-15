@@ -147,6 +147,7 @@ name = "extra_info"
 description = "Extra information about the controller's session. Empty if idle"
 template = """
 {% if connection_type != 'Idle' %}
+    {# 42 tracked · 51 in range · 122.800 MHz #}
     {{ tracked }} tracked · {{ in_range }} in range · {{ frequency_info }}
 {% endif %}
 """

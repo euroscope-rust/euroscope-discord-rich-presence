@@ -36,11 +36,10 @@ impl Presence {
         main_tx: mpsc::Sender<MainMsg>,
         settings: Settings,
         templates: Templates,
-        info: ConnectionInformation,
     ) -> Self {
         let (presence_tx, presence_rx) = mpsc::channel();
         let handle = Some(thread::spawn(move || {
-            run(&main_tx, &presence_rx, settings, templates, info);
+            run(&main_tx, &presence_rx, settings, templates);
         }));
         Self {
             presence_tx,
@@ -96,9 +95,12 @@ fn run(
     presence_rx: &mpsc::Receiver<PresenceMsg>,
     mut settings: Settings,
     mut templates: Templates,
-    mut info: ConnectionInformation,
 ) {
     let mut client = DiscordIpcClient::new(settings.discord.client_id.clone());
+
+    // Placeholder until the first update arrives; never published on its own
+    // (see `published` below).
+    let mut info = ConnectionInformation::default();
 
     // Connect ahead of the first message so the first push is immediate. A
     // failure here is fine; we retry inside the loop on the retry interval.
@@ -113,6 +115,10 @@ fn run(
             settings.general.activity_min_push_interval_s,
         ))
         .unwrap_or_else(Instant::now);
+    // The state Discord is currently showing. `None` until we've pushed once,
+    // so the first received state is always published, even if it matches the
+    // state we were seeded with.
+    let mut published: Option<ConnectionInformation> = None;
     let mut dirty = false;
 
     loop {
@@ -159,13 +165,13 @@ fn run(
 
         match msg {
             Some(PresenceMsg::Update(i)) => {
-                if i != info {
-                    if i.label(&settings) != info.label(&settings) {
-                        start_time = now();
-                    }
-                    info = i;
-                    dirty = true;
+                if i.label(&settings) != info.label(&settings) {
+                    start_time = now();
                 }
+                info = i;
+                // Owe a push whenever the latest state differs from what Discord
+                // is actually showing (not merely from the previous receive).
+                dirty = published.as_ref() != Some(&info);
             }
             Some(PresenceMsg::RefreshSettings(boxed)) => {
                 let (s, t) = *boxed;
@@ -208,6 +214,7 @@ fn run(
             ) {
                 Ok(()) => {
                     dirty = false;
+                    published = Some(info.clone());
                     last_push = Instant::now();
                 }
                 Err(err) => {

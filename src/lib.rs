@@ -98,11 +98,9 @@ impl Plugin for DiscordRichPresence {
             }
         };
 
-        let info = ConnectionInformation::from_ctx(ctx);
-
         let (main_tx, main_rx) = mpsc::channel();
 
-        let presence = Presence::start(main_tx, settings, templates, info.unwrap_or_default());
+        let presence = Presence::start(main_tx, settings, templates);
         Self {
             settings_path,
             presence,
