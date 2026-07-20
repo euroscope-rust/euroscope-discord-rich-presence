@@ -69,6 +69,7 @@ pub struct ActivityButtonSettings {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct IdleSettings {
     pub set_presence_when_idle: bool,
+    pub tag_line_rotate_interval_s: u64,
     pub tag_lines: Vec<String>,
     pub extra_tag_lines: Vec<String>,
 }

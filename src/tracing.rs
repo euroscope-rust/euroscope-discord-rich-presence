@@ -14,10 +14,9 @@ pub fn install(settings: &Settings) {
         .with_default_directive(Level::INFO.into())
         .parse_lossy(&settings.general.log_level);
 
-    if let Some(plugin_path) = get_plugin_path() {
-        let plugin_dir = plugin_path
-            .parent()
-            .expect("Plugin must have a parent directory");
+    if let Some(plugin_path) = get_plugin_path()
+        && let Some(plugin_dir) = plugin_path.parent()
+    {
         let logs_dir = plugin_dir.join("logs");
         if let Ok(file_appender) = RollingFileAppender::builder()
             .rotation(Rotation::DAILY)

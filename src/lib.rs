@@ -128,7 +128,7 @@ impl Plugin for DiscordRichPresence {
         let info = ConnectionInformation::from_ctx(ctx);
         if let Some(info) = info {
             trace!(?info, "Sending controller information to thread.");
-            self.send_presence_msg(PresenceMsg::Update(info))
+            self.send_presence_msg(PresenceMsg::Update(info));
         } else {
             trace!("No controller info to send to thread.");
         }
@@ -160,7 +160,7 @@ impl Plugin for DiscordRichPresence {
                     }
                 }
             } else {
-                warn!(target: "mbox", "Unable to find settings file, keeping current settings.")
+                warn!(target: "mbox", "Unable to find settings file, keeping current settings.");
             }
 
             true

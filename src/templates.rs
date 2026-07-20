@@ -1,4 +1,8 @@
+use std::time::Instant;
+
 use anyhow::{Result, anyhow};
+use rand::rng;
+use rand::seq::IndexedRandom;
 use serde::Deserialize;
 use tera::{Context, Tera};
 use tracing::warn;
@@ -36,6 +40,9 @@ const DISALLOWED_NAMES: &[&str] = &[
 pub struct Templates {
     tera: Tera,
     extra_templates: Vec<String>,
+    idle_tag_lines: Vec<String>,
+    idle_tag_line: String,
+    idle_tag_line_last_update: Instant,
 }
 
 impl Templates {
@@ -80,18 +87,47 @@ impl Templates {
             tera.add_raw_template(&extra.name, &extra.template)?;
         }
 
+        let idle_tag_lines = {
+            let mut lines = Vec::with_capacity(
+                settings.idle.tag_lines.len() + settings.idle.extra_tag_lines.len(),
+            );
+            lines.extend(settings.idle.tag_lines.clone());
+            lines.extend(settings.idle.extra_tag_lines.clone());
+            lines
+        };
+        let idle_tag_line = idle_tag_lines
+            .choose(&mut rng())
+            .map(|s| s.to_owned())
+            .unwrap_or_default();
+
         Ok(Self {
             tera,
             extra_templates,
+            idle_tag_lines,
+            idle_tag_line,
+            idle_tag_line_last_update: Instant::now(),
         })
     }
 
     pub fn make_context(
-        &self,
+        &mut self,
         settings: &Settings,
         info: &ConnectionInformation,
     ) -> Result<Context> {
+        if self.idle_tag_line_last_update.elapsed().as_secs()
+            >= settings.idle.tag_line_rotate_interval_s
+        {
+            let idle_tag_line = self
+                .idle_tag_lines
+                .choose(&mut rng())
+                .map(|s| s.to_owned())
+                .unwrap_or_default();
+            self.idle_tag_line = idle_tag_line;
+            self.idle_tag_line_last_update = Instant::now();
+        }
+
         let mut ctx = Context::new();
+        ctx.insert("idle_tag_line", &self.idle_tag_line);
         info.enrich_context(&mut ctx, settings);
         for extra in &self.extra_templates {
             let rendered = match self.tera.render(extra, &ctx) {

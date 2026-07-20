@@ -89,6 +89,8 @@ second = {}
 # Whether to set the Discord presence when EuroScope is idle (i.e. not connected
 # to any network).
 set_presence_when_idle = true
+# Interval at which to change the tag line.
+tag_line_rotate_interval_s = 30
 # Tag line available as `idle_tag_line` in templates when EuroScope is idle.
 # Changing this option in your configuration file will overwrite all of those.
 # If you'd like to add more, use the `extra_tag_lines` option below.
@@ -168,7 +170,7 @@ name = "description"
 description = "The controller's description we show as details by default."
 template = """
 {% if connection_type == 'Idle' %}
-    TODO
+    {{ idle_tag_line }}
 {% else %}
     {# Controlling LSGG_TWR (S2) #}
     {{ action }} {% if radio_name %}{{ radio_name }}{% else %}{{ callsign }}{% endif %}{% if rating != '' %} ({{ rating }}){% endif %}

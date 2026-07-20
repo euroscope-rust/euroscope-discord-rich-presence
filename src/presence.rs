@@ -146,7 +146,7 @@ pub fn run(
 
         // Push the latest state once the min-push window has elapsed.
         if last_push.elapsed() >= min_push_interval {
-            match set_activity(&settings, &templates, &mut client, &info, start_time) {
+            match set_activity(&settings, &mut templates, &mut client, &info, start_time) {
                 Ok(()) => {
                     dirty = false;
                     published = Some(info.clone());
@@ -179,7 +179,7 @@ fn connect(client: &mut DiscordIpcClient) -> bool {
 #[inline]
 fn set_activity(
     settings: &Settings,
-    templates: &Templates,
+    templates: &mut Templates,
     client: &mut DiscordIpcClient,
     info: &ConnectionInformation,
     start_time: i64,
@@ -201,7 +201,7 @@ fn set_activity(
 #[expect(clippy::too_many_lines, reason = "Couldn't care less.")]
 fn make_activity<'a>(
     settings: &'a Settings,
-    templates: &'a Templates,
+    templates: &'a mut Templates,
     info: &'a ConnectionInformation,
     start_time: i64,
 ) -> Result<Activity<'a>> {
