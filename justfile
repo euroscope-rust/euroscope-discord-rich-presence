@@ -15,7 +15,7 @@ ci-fmt:
 alias l := lint
 # Lint code
 lint:
-  cargo clippy
+  cargo clippy --all-targets
 [private]
 ci-lint:
   $env:RUSTFLAGS = "-Dwarnings"; just lint

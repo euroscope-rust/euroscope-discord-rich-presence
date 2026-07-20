@@ -10,13 +10,15 @@ const DEFAULT_CONFIG: &str = include_str!("../default.toml");
 pub struct Settings {
     pub general: GeneralSettings,
     pub discord: DiscordSettings,
-    pub radio_names: HashMap<String, String>,
     pub activity: ActivitySettings,
+    pub radio_names: HashMap<String, String>,
+    pub idle: IdleSettings,
     pub templates: Vec<TemplateSettings>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct GeneralSettings {
+    pub log_level: String,
     pub activity_retry_interval_s: u64,
     pub activity_min_push_interval_s: u64,
     pub treat_other_connections_as_direct: bool,
@@ -65,6 +67,13 @@ pub struct ActivityButtonSettings {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct IdleSettings {
+    pub set_presence_when_idle: bool,
+    pub tag_lines: Vec<String>,
+    pub extra_tag_lines: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct TemplateSettings {
     pub name: String,
     pub template: String,
@@ -88,6 +97,6 @@ mod tests {
 
     #[test]
     fn default_config_loads() {
-        Settings::load(&[]).expect("Failed to load default settings");
+        Settings::load(&[]).expect("settings");
     }
 }

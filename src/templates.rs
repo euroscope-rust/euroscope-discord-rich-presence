@@ -1,6 +1,7 @@
 use anyhow::{Result, anyhow};
 use serde::Deserialize;
 use tera::{Context, Tera};
+use tracing::warn;
 
 use crate::{controller_information::ConnectionInformation, settings::Settings};
 
@@ -93,7 +94,17 @@ impl Templates {
         let mut ctx = Context::new();
         info.enrich_context(&mut ctx, settings);
         for extra in &self.extra_templates {
-            let rendered = self.tera.render(extra, &ctx)?;
+            let rendered = match self.tera.render(extra, &ctx) {
+                Ok(rendered) => rendered,
+                Err(err) => {
+                    warn!(
+                        ?err,
+                        template_name = extra,
+                        "Failed to render template, falling back to empty string."
+                    );
+                    String::new()
+                }
+            };
             ctx.insert(extra.clone(), rendered.trim());
         }
         Ok(ctx)
@@ -149,19 +160,17 @@ mod tests {
 
     #[test]
     fn default_templates_load() {
-        let settings = Settings::load(&[]).expect("Failed to load default settings.");
-        Templates::new(&settings).expect("Failed to load default templates.");
+        let settings = Settings::load(&[]).expect("settings");
+        Templates::new(&settings).expect("templates");
     }
 
     #[test]
     fn make_context_idle() {
-        let settings = Settings::load(&[]).expect("Failed to load default settings.");
-        let templates = Templates::new(&settings).expect("Failed to load default templates.");
+        let settings = Settings::load(&[]).expect("settings");
+        let templates = Templates::new(&settings).expect("templates");
 
         let info = ConnectionInformation::Idle;
 
-        templates
-            .make_context(&settings, &info)
-            .expect("Failed to create context");
+        templates.make_context(&settings, &info).expect("context");
     }
 }

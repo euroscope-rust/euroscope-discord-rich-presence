@@ -10,36 +10,60 @@ pub mod controller_information;
 pub mod presence;
 pub mod settings;
 pub mod templates;
+pub mod tracing;
 pub mod utils;
 
-use std::{fs::metadata, path::PathBuf, sync::mpsc};
+use std::{fs::metadata, path::PathBuf, sync::mpsc, thread, thread::JoinHandle};
 
+use ::tracing::{error, info, trace, warn};
 use euroscope::{Context, Plugin, register_plugin};
 
 use crate::{
-    controller_information::ConnectionInformation, presence::Presence, settings::Settings,
-    templates::Templates, utils::get_plugin_path,
+    controller_information::ConnectionInformation,
+    presence::{PresenceMsg, run},
+    settings::Settings,
+    templates::Templates,
+    utils::get_plugin_path,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MainMsg {
-    Log(String),
-}
-
 struct DiscordRichPresence {
-    presence: Presence,
+    presence_tx: mpsc::Sender<PresenceMsg>,
+    handle: Option<JoinHandle<()>>,
     settings_path: Option<PathBuf>,
     thread_seen_dead: bool,
-    main_rx: mpsc::Receiver<MainMsg>,
 }
 
 impl DiscordRichPresence {
     fn make_settings_path() -> Option<PathBuf> {
         if let Some(mut path) = get_plugin_path() {
             path.set_extension("toml");
-            metadata(&path).is_ok_and(|m| m.is_file()).then_some(path)
+            if metadata(&path).is_ok_and(|m| m.is_file()) {
+                info!(target: "mbox", path = %path.display(), "Found settings file.");
+                Some(path)
+            } else {
+                warn!(target: "mbox", path = %path.display(), "No settings file found.");
+                None
+            }
         } else {
+            error!(target: "mbox", "Failed to retrieve the plugin path. This is a bug, please report it.");
             None
+        }
+    }
+
+    fn send_presence_msg(&mut self, msg: PresenceMsg) {
+        if self.presence_tx.send(msg).is_err() {
+            error!(target: "mbox", "Discord presence update thread has died. This is a bug, please report it.");
+            self.thread_seen_dead = true;
+        }
+    }
+}
+
+#[expect(clippy::missing_trait_methods, reason = "We don't use pin_drop")]
+impl Drop for DiscordRichPresence {
+    fn drop(&mut self) {
+        let _ = self.presence_tx.send(PresenceMsg::Shutdown);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
         }
     }
 }
@@ -54,101 +78,63 @@ impl Plugin for DiscordRichPresence {
     const NAME: &'static str = "Discord Rich Presence";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-    fn new(ctx: &mut Context) -> Self {
-        ctx.display_message(
-            Self::NAME,
-            "",
-            &format!("{} v{} loaded", Self::NAME, Self::VERSION),
-        );
+    fn new(_ctx: &mut Context) -> Self {
+        let tracing_crude = tracing::install_crude();
+        info!(target: "mbox", version = Self::VERSION, "{} loaded.", Self::NAME);
 
         let settings_path = Self::make_settings_path();
 
         let mut settings = if let Some(plugin_path) = &settings_path {
             let plugin_path = plugin_path.display().to_string();
-            ctx.display_message(Self::NAME, "", &format!("Found settings at {plugin_path}"));
+            info!(target: "mbox", path = %plugin_path, "Loading settings...");
             Settings::load(&[&plugin_path]).unwrap_or_else(|err| {
-                ctx.display_message(
-                    Self::NAME,
-                    "",
-                    "Unable to load settings. Running with default settings.",
-                );
-                ctx.display_message(Self::NAME, "", &err.to_string());
-                Settings::load(&[]).expect("Failed to load default settings.")
+                warn!(target: "mbox", %err, "Unable to load settings. Running with default settings.");
+                Settings::load(&[]).expect("to load default settings.")
             })
         } else {
-            ctx.display_message(
-                Self::NAME,
-                "",
-                "Unable to find plugin path. Running with default settings.",
-            );
-            Settings::load(&[]).expect("Failed to load default settings.")
+            warn!(target: "mbox", "Unable to find settings file. Running with default settings.");
+            Settings::load(&[]).expect("to load default settings.")
         };
 
         let templates = match Templates::new(&settings) {
             Ok(templates) => templates,
             Err(err) => {
-                ctx.display_message(
-                    Self::NAME,
-                    "",
-                    "Failed to load templates. Falling back to default settings.",
-                );
-                settings = Settings::load(&[]).expect("Failed to load default settings.");
-                ctx.display_message(Self::NAME, "", &err.to_string());
-                Templates::new(&settings).expect("Failed to load default templates.")
+                warn!(target: "mbox", %err, "Failed to load templates. Falling back to default settings.");
+                settings = Settings::load(&[]).expect("to load default settings.");
+                Templates::new(&settings).expect("to load default templates.")
             }
         };
 
-        let (main_tx, main_rx) = mpsc::channel();
+        tracing::install(&settings);
+        drop(tracing_crude);
 
-        let presence = Presence::start(main_tx, settings, templates);
+        let (presence_tx, presence_rx) = mpsc::channel();
+        let handle = Some(thread::spawn(move || {
+            run(&presence_rx, settings, templates);
+        }));
         Self {
+            presence_tx,
+            handle,
             settings_path,
-            presence,
             thread_seen_dead: false,
-            main_rx,
         }
     }
 
     fn on_timer(&mut self, ctx: &mut Context, _counter: i32) {
-        match self.main_rx.try_recv() {
-            Ok(MainMsg::Log(msg)) => {
-                ctx.display_message(Self::NAME, "", &msg);
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.thread_seen_dead = true;
-                ctx.display_message(
-                    Self::NAME,
-                    "",
-                    "Discord presence update thread has died. This is a bug.",
-                );
-            }
+        if self.thread_seen_dead {
+            return;
         }
 
-        if !self.thread_seen_dead && self.presence.is_thread_dead() {
-            self.thread_seen_dead = true;
-            ctx.display_message(
-                Self::NAME,
-                "",
-                "Discord presence update thread has died. This is a bug.",
-            );
-        }
-        if !self.thread_seen_dead {
-            let info = ConnectionInformation::from_ctx(ctx);
-            if let Some(info) = info
-                && !self.presence.send_update(info)
-            {
-                ctx.display_message(
-                    Self::NAME,
-                    "",
-                    "Discord presence update thread has died. This is a bug.",
-                );
-                self.thread_seen_dead = true;
-            }
+        let info = ConnectionInformation::from_ctx(ctx);
+        if let Some(info) = info {
+            trace!(?info, "Sending controller information to thread.");
+            self.send_presence_msg(PresenceMsg::Update(info))
+        } else {
+            trace!("No controller info to send to thread.");
         }
     }
 
-    fn on_compile_command(&mut self, ctx: &mut Context, command_line: &str) -> bool {
+    fn on_compile_command(&mut self, _ctx: &mut Context, command_line: &str) -> bool {
         if command_line.starts_with(".drp refresh") {
             let settings_path = self
                 .settings_path
@@ -156,44 +142,25 @@ impl Plugin for DiscordRichPresence {
                 .map_or_else(Self::make_settings_path, Some);
             if let Some(plugin_path) = &settings_path {
                 let plugin_path = plugin_path.display().to_string();
-                ctx.display_message(Self::NAME, "", &format!("Found settings at {plugin_path}"));
+                info!(target: "mbox", "Found settings at `{}`.", plugin_path);
                 match Settings::load(&[&plugin_path]) {
                     Ok(settings) => match Templates::new(&settings) {
                         Ok(templates) => {
-                            ctx.display_message(Self::NAME, "", "Successfully reloaded settings.");
-                            if !self.presence.refresh_settings(settings, templates) {
-                                ctx.display_message(
-                                    Self::NAME,
-                                    "",
-                                    "Discord presence update thread has died. This is a bug.",
-                                );
-                                self.thread_seen_dead = true;
-                            }
+                            info!(target: "mbox", "Successfully reloaded settings.");
+                            self.send_presence_msg(PresenceMsg::RefreshSettings(Box::new((
+                                settings, templates,
+                            ))));
                         }
                         Err(err) => {
-                            ctx.display_message(
-                                Self::NAME,
-                                "",
-                                "Failed to load templates. Keeping current settings.",
-                            );
-                            ctx.display_message(Self::NAME, "", &err.to_string());
+                            warn!(target: "mbox", %err, "Failed to load templates. Keeping current settings.");
                         }
                     },
                     Err(err) => {
-                        ctx.display_message(
-                            Self::NAME,
-                            "",
-                            "Unable to load settings. Keeping current settings.",
-                        );
-                        ctx.display_message(Self::NAME, "", &err.to_string());
+                        warn!(target: "mbox", %err, "Failed to load settings. Keeping current settings.");
                     }
                 }
             } else {
-                ctx.display_message(
-                    Self::NAME,
-                    "",
-                    "Unable to find plugin path. Keeping current settings.",
-                );
+                warn!(target: "mbox", "Unable to find settings file, keeping current settings.")
             }
 
             true

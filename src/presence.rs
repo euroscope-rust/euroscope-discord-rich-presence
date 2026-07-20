@@ -1,6 +1,5 @@
 use std::{
     sync::mpsc,
-    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -10,9 +9,9 @@ use discord_rich_presence::{
     DiscordIpc as _, DiscordIpcClient,
     activity::{Activity, Assets, Button, Timestamps},
 };
+use tracing::{debug, error, info, warn};
 
 use crate::{
-    MainMsg,
     controller_information::ConnectionInformation,
     settings::Settings,
     templates::{ActivityType, StatusDisplayType, Templates},
@@ -22,58 +21,7 @@ pub enum PresenceMsg {
     Update(ConnectionInformation),
     // Boxed to keep the enum small
     RefreshSettings(Box<(Settings, Templates)>),
-    Ping,
     Shutdown,
-}
-
-pub struct Presence {
-    presence_tx: mpsc::Sender<PresenceMsg>,
-    handle: Option<JoinHandle<()>>,
-}
-
-impl Presence {
-    pub fn start(main_tx: mpsc::Sender<MainMsg>, settings: Settings, templates: Templates) -> Self {
-        let (presence_tx, presence_rx) = mpsc::channel();
-        let handle = Some(thread::spawn(move || {
-            run(&main_tx, &presence_rx, settings, templates);
-        }));
-        Self {
-            presence_tx,
-            handle,
-        }
-    }
-
-    pub fn is_thread_dead(&self) -> bool {
-        if let Some(handle) = &self.handle
-            && handle.is_finished()
-        {
-            return true;
-        }
-
-        self.presence_tx.send(PresenceMsg::Ping).is_err()
-    }
-
-    pub fn send_update(&self, info: ConnectionInformation) -> bool {
-        self.presence_tx.send(PresenceMsg::Update(info)).is_ok()
-    }
-
-    pub fn refresh_settings(&self, settings: Settings, templates: Templates) -> bool {
-        self.presence_tx
-            .send(PresenceMsg::RefreshSettings(Box::new((
-                settings, templates,
-            ))))
-            .is_ok()
-    }
-}
-
-#[expect(clippy::missing_trait_methods, reason = "We don't use pin_drop")]
-impl Drop for Presence {
-    fn drop(&mut self) {
-        let _ = self.presence_tx.send(PresenceMsg::Shutdown);
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
-    }
 }
 
 /// Worker loop. Owns the Discord client; the main thread never touches it.
@@ -86,12 +34,13 @@ impl Drop for Presence {
 /// The first iteration always blocks on `recv`, so nothing is published before
 /// the main thread hands us a state to show. Connecting up front is allowed and
 /// only makes that first push faster.
-fn run(
-    main_tx: &mpsc::Sender<MainMsg>,
+pub fn run(
     presence_rx: &mpsc::Receiver<PresenceMsg>,
     mut settings: Settings,
     mut templates: Templates,
 ) {
+    info!("Starting Discord presence update thread.");
+
     let mut client = DiscordIpcClient::new(settings.discord.client_id.clone());
 
     // Placeholder until the first update arrives; never published on its own
@@ -100,7 +49,7 @@ fn run(
 
     // Connect ahead of the first message so the first push is immediate. A
     // failure here is fine; we retry inside the loop on the retry interval.
-    let mut connected = connect(main_tx, &mut client);
+    let mut connected = connect(&mut client);
     let mut last_connect = Instant::now();
 
     let mut start_time = now();
@@ -138,10 +87,7 @@ fn run(
                 if let Ok(msg) = presence_rx.recv() {
                     Some(msg)
                 } else {
-                    let _ = main_tx.send(MainMsg::Log(
-                        "Failed to recv from the main thread. Shutting down Discord thread."
-                            .to_owned(),
-                    ));
+                    error!("Failed to recv from the main thread. Shutting down Discord thread.");
                     break;
                 }
             }
@@ -150,10 +96,7 @@ fn run(
                 // Timed out: fall through to the (re)connect / push logic below.
                 Err(mpsc::RecvTimeoutError::Timeout) => None,
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    let _ = main_tx.send(MainMsg::Log(
-                        "Failed to recv from the main thread. Shutting down Discord thread."
-                            .to_owned(),
-                    ));
+                    error!("Failed to recv from the main thread. Shutting down Discord thread.");
                     break;
                 }
             },
@@ -183,9 +126,8 @@ fn run(
                 dirty = true;
             }
             Some(PresenceMsg::Shutdown) => break,
-            // A ping keeps the channel warm; a timeout just drops us into the
-            // (re)connect / push logic below.
-            Some(PresenceMsg::Ping) | None => {}
+            // A timeout just drops us into the (re)connect / push logic below.
+            None => {}
         }
 
         if !dirty {
@@ -194,7 +136,7 @@ fn run(
 
         // (Re)connect if needed, no more than once per retry interval.
         if !connected && last_connect.elapsed() >= retry_interval {
-            connected = connect(main_tx, &mut client);
+            connected = connect(&mut client);
             last_connect = Instant::now();
             if !connected {
                 // Still down; the retry interval governs the next attempt.
@@ -204,23 +146,14 @@ fn run(
 
         // Push the latest state once the min-push window has elapsed.
         if last_push.elapsed() >= min_push_interval {
-            match set_activity(
-                main_tx,
-                &settings,
-                &templates,
-                &mut client,
-                &info,
-                start_time,
-            ) {
+            match set_activity(&settings, &templates, &mut client, &info, start_time) {
                 Ok(()) => {
                     dirty = false;
                     published = Some(info.clone());
                     last_push = Instant::now();
                 }
                 Err(err) => {
-                    let _ = main_tx.send(MainMsg::Log(format!(
-                        "Failed to set Discord presence: {err}"
-                    )));
+                    warn!(%err, "Failed to set Discord presence.");
                     // The write failed, so assume the pipe dropped and let the
                     // retry interval govern the next reconnect attempt.
                     connected = false;
@@ -233,11 +166,11 @@ fn run(
 }
 
 #[inline]
-fn connect(main_tx: &mpsc::Sender<MainMsg>, client: &mut DiscordIpcClient) -> bool {
+fn connect(client: &mut DiscordIpcClient) -> bool {
     match client.connect() {
         Ok(()) => true,
         Err(err) => {
-            let _ = main_tx.send(MainMsg::Log(format!("Failed to connect to Discord: {err}")));
+            warn!(%err, "Failed to connect to Discord.");
             false
         }
     }
@@ -245,14 +178,13 @@ fn connect(main_tx: &mpsc::Sender<MainMsg>, client: &mut DiscordIpcClient) -> bo
 
 #[inline]
 fn set_activity(
-    main_tx: &mpsc::Sender<MainMsg>,
     settings: &Settings,
     templates: &Templates,
     client: &mut DiscordIpcClient,
     info: &ConnectionInformation,
     start_time: i64,
 ) -> Result<()> {
-    let activity = make_activity(main_tx, settings, templates, info, start_time)?;
+    let activity = make_activity(settings, templates, info, start_time)?;
 
     client.set_activity(activity)?;
 
@@ -260,9 +192,7 @@ fn set_activity(
     // crate's `set_activity` never reads it, so a rejected payload otherwise
     // looks like success; surface it so we can see accept/reject and why.
     let (_, response) = client.recv()?;
-    let _ = main_tx.send(MainMsg::Log(format!(
-        "Discord SET_ACTIVITY response: {response}"
-    )));
+    debug!(%response, "Discord SET_ACTIVITY response");
 
     Ok(())
 }
@@ -270,7 +200,6 @@ fn set_activity(
 #[inline]
 #[expect(clippy::too_many_lines, reason = "Couldn't care less.")]
 fn make_activity<'a>(
-    main_tx: &mpsc::Sender<MainMsg>,
     settings: &'a Settings,
     templates: &'a Templates,
     info: &'a ConnectionInformation,
@@ -282,9 +211,7 @@ fn make_activity<'a>(
         Ok(data) if !data.is_empty() => Some(data),
         Ok(_) => None,
         Err(err) => {
-            let _ = main_tx.send(MainMsg::Log(format!(
-                "Failed to render template `{name}`: {err}"
-            )));
+            warn!(%err, template_name = name, "Failed to render template.");
             None
         }
     };
@@ -294,9 +221,7 @@ fn make_activity<'a>(
         Ok(data) if !data.is_empty() => serde_json::from_str::<ActivityType>(&data).ok(),
         Ok(_) => None,
         Err(err) => {
-            let _ = main_tx.send(MainMsg::Log(format!(
-                "Failed to render template `activity_type`: {err}"
-            )));
+            warn!(%err, template_name = "activity_type", "Failed to render template.");
             None
         }
     };
@@ -304,9 +229,7 @@ fn make_activity<'a>(
         Ok(data) if !data.is_empty() => serde_json::from_str::<StatusDisplayType>(&data).ok(),
         Ok(_) => None,
         Err(err) => {
-            let _ = main_tx.send(MainMsg::Log(format!(
-                "Failed to render template `status_display_type`: {err}"
-            )));
+            warn!(%err, template_name = "status_display_type", "Failed to render template.");
             None
         }
     };
@@ -404,8 +327,6 @@ fn now() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
-
     use super::{make_activity, now};
     use crate::{
         controller_information::ConnectionInformation, settings::Settings, templates::Templates,
@@ -413,16 +334,12 @@ mod tests {
 
     #[test]
     fn make_activity_idle() {
-        let (main_tx, main_rx) = mpsc::channel();
         let settings = Settings::load(&[]).expect("settings");
         let templates = Templates::new(&settings).expect("templates");
         let start_time = now();
 
         let info = ConnectionInformation::Idle;
 
-        make_activity(&main_tx, &settings, &templates, &info, start_time)
-            .expect("Failed to create activity");
-
-        assert_eq!(Err(mpsc::TryRecvError::Empty), main_rx.try_recv());
+        make_activity(&settings, &templates, &info, start_time).expect("activity");
     }
 }
