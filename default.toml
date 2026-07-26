@@ -148,7 +148,7 @@ template = """
 Sweating on
 {% elif connection_type == 'Playback' %}
 Playbacking
-{% else %}
+{% elif connection_type == 'Connected' %}
     {% if facility == 'Observer' %}
         {% if rating == 'SUP' %}
             Supervising as
@@ -170,7 +170,7 @@ description = "VATSIM Radar URL pointing to the controller."
 template = """
 {% if action == 'Controlling' %}
 https://vatsim-radar.com/?atc={{ callsign }}
-{% endif -%}
+{% endif %}
 """
 
 [[templates]]
