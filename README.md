@@ -35,7 +35,8 @@ By default, the plugin will run with a "generic" Discord app, no tied to any
 vACC specific entity. This means that the image shown in the sidebar when in a
 voice channel will be the VATSIM logo and cannot be changed, only the images
 displayed when viewing the activity in "full" can be customised. See the
-instructions below to create a Discord app to change that.
+[instructions below](#using-a-custom-discord-application) to create a Discord
+app to change that.
 
 If you do not need to customise that logo, but still want to change the other
 images, you can use any of the assets specified below. If you want extra assets,
@@ -62,6 +63,36 @@ and re-load the plugin.
 
 If the new settings are invalid, an error will be shown in the EuroScope message
 box, and old settings will remain in place.
+
+## Using a custom Discord application
+
+Follow these instructions to create a custom Discord app for use with this
+plugin:
+
+1. Create a developer team on the [Discord Developer Portal](https://discord.com/developers/teams).
+2. Create a new application on the [Discord Developer Portal](https://discord.com/developers/applications) and assign it to your team.
+3. Enable the `Public Client` toggle in the [OAuth2 tab](https://discord.com/developers/applications/select/oauth2).
+4. Write down the `Application ID` found in the [information tab](https://discord.com/developers/applications/select/information).
+5. Create a custom settings file for this plugin with the following data:
+
+```toml
+[discord]
+client_id = "<The application ID you copied in step 4>"
+
+[activity.assets]
+# Defaults to `vatsim`, which won't exist in your new application
+large_image = "my-asset"
+```
+
+From the [information
+tab](https://discord.com/developers/applications/select/information), you can
+change your application icon, which is the icon that will show in the sidebar
+when in a voice channel.
+
+In the [Rich Presence Art Assets
+tab](https://discord.com/developers/applications/select/rich-presence/assets),
+you can upload extra assets to be used with the plugin. You can also customise
+the cover image shown when opening the application in full.
 
 ## Contributing
 
