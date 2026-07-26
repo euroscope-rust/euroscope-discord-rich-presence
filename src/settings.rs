@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use config::{Config, File, FileFormat};
 use serde::Deserialize;
 
@@ -16,12 +16,34 @@ pub struct Settings {
     pub templates: Vec<TemplateSettings>,
 }
 
+impl Settings {
+    pub fn validate(&self) -> Result<()> {
+        self.general.validate()?;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct GeneralSettings {
     pub log_level: String,
     pub activity_retry_interval_s: u64,
     pub activity_min_push_interval_s: u64,
+    pub activity_max_push_interval_s: u64,
     pub treat_other_connections_as_direct: bool,
+}
+
+impl GeneralSettings {
+    fn validate(&self) -> Result<()> {
+        if self.activity_min_push_interval_s >= self.activity_max_push_interval_s {
+            bail!(
+                "activity_max_push_interval_s ({}) must be strictly greater than \
+                 activity_min_push_interval_s ({})",
+                self.activity_max_push_interval_s,
+                self.activity_min_push_interval_s,
+            );
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -88,7 +110,9 @@ impl Settings {
             builder = builder.add_source(File::new(path, FileFormat::Toml));
         }
         let raw = builder.build()?;
-        Ok(raw.try_deserialize()?)
+        let settings: Self = raw.try_deserialize()?;
+        settings.validate()?;
+        Ok(settings)
     }
 }
 

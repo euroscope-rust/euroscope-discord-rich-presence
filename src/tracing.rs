@@ -2,8 +2,7 @@ use euroscope::{
     get_plugin_path,
     tracing::{MboxLayer, is_mbox_target},
 };
-use tracing::Level;
-use tracing::error;
+use tracing::{Level, error};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{EnvFilter, filter::filter_fn, fmt, prelude::*};
 
@@ -37,7 +36,8 @@ pub fn install(settings: &Settings) {
     }
 
     error!(
-        "Could not log to file, falling back to writing logs to EuroScope message box. This is a bug, please report it."
+        "Could not log to file, falling back to writing logs to EuroScope message box. This is a \
+         bug, please report it."
     );
     tracing_subscriber::registry()
         .with(MboxLayer::new().with_filter(filter_layer))

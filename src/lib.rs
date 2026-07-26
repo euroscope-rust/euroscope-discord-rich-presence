@@ -16,14 +16,13 @@ pub mod utils;
 use std::{fs::metadata, path::PathBuf, sync::mpsc, thread, thread::JoinHandle};
 
 use ::tracing::{error, info, trace, warn};
-use euroscope::{Context, Plugin, register_plugin};
+use euroscope::{Context, Plugin, get_plugin_path, register_plugin};
 
 use crate::{
     controller_information::ConnectionInformation,
     presence::{PresenceMsg, run},
     settings::Settings,
     templates::Templates,
-    utils::get_plugin_path,
 };
 
 struct DiscordRichPresence {

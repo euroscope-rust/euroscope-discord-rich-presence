@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::Result;
-use chrono::Utc;
 use discord_rich_presence::{
     DiscordIpc as _, DiscordIpcClient,
     activity::{Activity, Assets, Button, Timestamps},
@@ -15,6 +14,7 @@ use crate::{
     controller_information::ConnectionInformation,
     settings::Settings,
     templates::{ActivityType, StatusDisplayType, Templates},
+    utils::now,
 };
 
 pub enum PresenceMsg {
@@ -24,12 +24,23 @@ pub enum PresenceMsg {
     Shutdown,
 }
 
+/// What the worker wants Discord to be showing.
+#[derive(PartialEq)]
+enum Target {
+    /// Clear the activity entirely (idle while idle presence is disabled).
+    Clear,
+    /// Show the rendered activity for this state.
+    Show(ConnectionInformation),
+}
+
 /// Worker loop. Owns the Discord client; the main thread never touches it.
 ///
 /// The loop coalesces updates: it never pushes to Discord more than once per
-/// `activity_min_push_interval_s`, always sending the most recent state when
-/// the window elapses. If the connection to Discord drops, it reconnects at
-/// most once per `activity_retry_interval_s`.
+/// `activity_min_push_interval_s`, and — so the presence stays fresh and the
+/// idle tag line keeps rotating — pushes at least once per
+/// `activity_max_push_interval_s`. While idle with idle presence disabled it
+/// clears the activity instead. If the connection to Discord drops, it
+/// reconnects at most once per `activity_retry_interval_s`.
 ///
 /// The first iteration always blocks on `recv`, so nothing is published before
 /// the main thread hands us a state to show. Connecting up front is allowed and
@@ -60,34 +71,30 @@ pub fn run(
             settings.general.activity_min_push_interval_s,
         ))
         .unwrap_or_else(Instant::now);
-    // The state Discord is currently showing. `None` until we've pushed once,
-    // so the first received state is always published, even if it matches the
-    // state we were seeded with.
-    let mut published: Option<ConnectionInformation> = None;
-    let mut dirty = false;
+    // What Discord is currently showing, or `None` if we've never pushed.
+    let mut published: Option<Target> = None;
+    // Whether the main thread has handed us a state yet. Until it has we block
+    // on `recv` and publish nothing.
+    let mut ready = false;
 
     loop {
         let retry_interval = Duration::from_secs(settings.general.activity_retry_interval_s);
-        let min_push_interval = Duration::from_secs(settings.general.activity_min_push_interval_s);
-        let rotate_interval = Duration::from_secs(settings.idle.tag_line_rotate_interval_s);
-        let idle_refresh = settings.idle.set_presence_when_idle
-            && published.is_some()
-            && matches!(info, ConnectionInformation::Idle);
 
-        // How long to wait for the next message. When we owe a push we wake
-        // ourselves to send it: after the min-push window if connected, or after
-        // the retry window if we still need to (re)connect. When idle we wake to
-        // rotate the tag line. Otherwise we block until a message arrives.
-        let wait = if dirty {
-            if connected {
-                Some(min_push_interval.saturating_sub(last_push.elapsed()))
-            } else {
-                Some(retry_interval.saturating_sub(last_connect.elapsed()))
-            }
-        } else if idle_refresh {
-            Some(rotate_interval.saturating_sub(last_push.elapsed()))
-        } else {
+        // What Discord should show right now, and the window that must elapse
+        // after the last push before we (re)apply it (or `None` if it already
+        // matches and needs no heartbeat).
+        let target = current_target(&info, &settings);
+        let push_due = next_push_interval(published.as_ref(), &target, &settings);
+
+        // How long to block for the next message before acting on our own. Not
+        // ready → await the first state. Otherwise, if a push is owed, wake to
+        // (re)connect or to send it; if not, block until a message arrives.
+        let wait = if !ready {
             None
+        } else if !connected {
+            push_due.map(|_| retry_interval.saturating_sub(last_connect.elapsed()))
+        } else {
+            push_due.map(|interval| interval.saturating_sub(last_push.elapsed()))
         };
 
         let msg = match wait {
@@ -116,9 +123,7 @@ pub fn run(
                     start_time = now();
                 }
                 info = i;
-                // Owe a push whenever the latest state differs from what Discord
-                // is actually showing (not merely from the previous receive).
-                dirty = published.as_ref() != Some(&info);
+                ready = true;
             }
             Some(PresenceMsg::RefreshSettings(boxed)) => {
                 let (s, t) = *boxed;
@@ -130,44 +135,48 @@ pub fn run(
                 }
                 settings = s;
                 templates = t;
-                // Re-render and re-push with the new templates.
-                dirty = true;
+                // Force a re-render with the new templates by treating the
+                // current presence as unknown.
+                published = None;
             }
             Some(PresenceMsg::Shutdown) => break,
             // A timeout just drops us into the (re)connect / push logic below.
             None => {}
         }
 
-        if !dirty {
-            // Nothing changed, but idle presence still needs a periodic
-            // re-render so its rotating tag line updates on Discord.
-            if idle_refresh && last_push.elapsed() >= rotate_interval {
-                dirty = true;
-            } else {
-                continue;
-            }
+        if !ready {
+            continue;
         }
 
         // (Re)connect if needed, no more than once per retry interval.
         if !connected && last_connect.elapsed() >= retry_interval {
             connected = connect(&mut client);
             last_connect = Instant::now();
-            if !connected {
-                // Still down; the retry interval governs the next attempt.
-                continue;
-            }
+        }
+        if !connected {
+            // Still down; the retry interval governs the next attempt.
+            continue;
         }
 
-        // Push the latest state once the min-push window has elapsed.
-        if last_push.elapsed() >= min_push_interval {
-            match set_activity(&settings, &mut templates, &mut client, &info, start_time) {
+        // Apply the target once its window (min after a change, max as a
+        // heartbeat) has elapsed.
+        let target = current_target(&info, &settings);
+        if let Some(interval) = next_push_interval(published.as_ref(), &target, &settings)
+            && last_push.elapsed() >= interval
+        {
+            let result = match &target {
+                Target::Show(state) => {
+                    set_activity(&settings, &mut templates, &mut client, state, start_time)
+                }
+                Target::Clear => clear_activity(&mut client),
+            };
+            match result {
                 Ok(()) => {
-                    dirty = false;
-                    published = Some(info.clone());
+                    published = Some(target);
                     last_push = Instant::now();
                 }
                 Err(err) => {
-                    warn!(%err, "Failed to set Discord presence.");
+                    warn!(%err, "Failed to update Discord presence.");
                     // The write failed, so assume the pipe dropped and let the
                     // retry interval govern the next reconnect attempt.
                     connected = false;
@@ -177,6 +186,43 @@ pub fn run(
     }
 
     let _ = client.close();
+}
+
+/// What Discord should currently be showing: nothing while idle if idle
+/// presence is disabled, otherwise the latest state.
+fn current_target(info: &ConnectionInformation, settings: &Settings) -> Target {
+    if !settings.idle.set_presence_when_idle && matches!(info, ConnectionInformation::Idle) {
+        Target::Clear
+    } else {
+        Target::Show(info.clone())
+    }
+}
+
+/// The window that must elapse after the last push before `target` should be
+/// (re)applied to Discord, or `None` when it already matches and needs no
+/// heartbeat.
+///
+/// A target that differs from what Discord shows is applied after the short
+/// `activity_min_push_interval_s` (coalescing bursts of changes). A matching
+/// shown state is still re-pushed after `activity_max_push_interval_s` as a
+/// heartbeat that keeps the presence fresh and rotates the idle tag line; a
+/// cleared presence needs no heartbeat.
+fn next_push_interval(
+    published: Option<&Target>,
+    target: &Target,
+    settings: &Settings,
+) -> Option<Duration> {
+    if published != Some(target) {
+        Some(Duration::from_secs(
+            settings.general.activity_min_push_interval_s,
+        ))
+    } else if matches!(target, Target::Show(_)) {
+        Some(Duration::from_secs(
+            settings.general.activity_max_push_interval_s,
+        ))
+    } else {
+        None
+    }
 }
 
 #[inline]
@@ -212,6 +258,17 @@ fn set_activity(
 }
 
 #[inline]
+fn clear_activity(client: &mut DiscordIpcClient) -> Result<()> {
+    client.clear_activity()?;
+
+    // Like `set_activity`, read Discord's reply so it doesn't desync the pipe.
+    let (_, response) = client.recv()?;
+    debug!(%response, "Discord clear-activity response");
+
+    Ok(())
+}
+
+#[inline]
 #[expect(clippy::too_many_lines, reason = "Couldn't care less.")]
 fn make_activity<'a>(
     settings: &'a Settings,
@@ -219,7 +276,7 @@ fn make_activity<'a>(
     info: &'a ConnectionInformation,
     start_time: i64,
 ) -> Result<Activity<'a>> {
-    let ctx = templates.make_context(settings, info)?;
+    let ctx = templates.make_context(settings, info, start_time)?;
 
     let render_string = |name| match templates.render(name, &ctx) {
         Ok(data) if !data.is_empty() => Some(data),
@@ -334,16 +391,12 @@ fn make_activity<'a>(
     Ok(activity)
 }
 
-#[inline]
-fn now() -> i64 {
-    Utc::now().timestamp_millis()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{make_activity, now};
+    use super::make_activity;
     use crate::{
         controller_information::ConnectionInformation, settings::Settings, templates::Templates,
+        utils::now,
     };
 
     #[test]

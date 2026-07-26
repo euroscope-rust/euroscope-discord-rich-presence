@@ -1,13 +1,14 @@
+use std::collections::HashMap;
 use std::time::Instant;
 
 use anyhow::{Result, anyhow};
-use rand::rng;
-use rand::seq::IndexedRandom as _;
+use glob::Pattern;
+use rand::{rng, seq::IndexedRandom as _};
 use serde::Deserialize;
 use tera::{Context, Tera};
 use tracing::warn;
 
-use crate::{controller_information::ConnectionInformation, settings::Settings};
+use crate::{controller_information::ConnectionInformation, settings::Settings, utils::now};
 
 const DISALLOWED_NAMES: &[&str] = &[
     "connection_type",
@@ -40,6 +41,7 @@ const DISALLOWED_NAMES: &[&str] = &[
 pub struct Templates {
     tera: Tera,
     extra_template_names: Vec<String>,
+    radio_name_globs: HashMap<Pattern, String>,
     idle_tag_lines: Vec<String>,
     idle_tag_line: String,
     idle_tag_line_last_update: Instant,
@@ -87,6 +89,11 @@ impl Templates {
             tera.add_raw_template(&extra.name, &extra.template)?;
         }
 
+        let mut radio_name_globs = HashMap::with_capacity(settings.radio_names.len());
+        for (radio_name_glob, radio_name) in &settings.radio_names {
+            radio_name_globs.insert(Pattern::new(radio_name_glob)?, radio_name.clone());
+        }
+
         let idle_tag_lines = {
             let mut lines = Vec::with_capacity(
                 settings.idle.tag_lines.len() + settings.idle.extra_tag_lines.len(),
@@ -103,6 +110,7 @@ impl Templates {
         Ok(Self {
             tera,
             extra_template_names,
+            radio_name_globs,
             idle_tag_lines,
             idle_tag_line,
             idle_tag_line_last_update: Instant::now(),
@@ -113,6 +121,7 @@ impl Templates {
         &mut self,
         settings: &Settings,
         info: &ConnectionInformation,
+        start_time: i64,
     ) -> Result<Context> {
         if self.idle_tag_line_last_update.elapsed().as_secs()
             >= settings.idle.tag_line_rotate_interval_s
@@ -127,8 +136,22 @@ impl Templates {
         }
 
         let mut ctx = Context::new();
+        ctx.insert("connection_duration", &(now() - start_time));
         ctx.insert("idle_tag_line", &self.idle_tag_line);
+
         info.enrich_context(&mut ctx, settings);
+
+        if let Some(callsign) = ctx.get("callsign")
+            && let Some(callsign) = callsign.as_str()
+        {
+            for (glob, radio_name) in &self.radio_name_globs {
+                if glob.matches(callsign) {
+                    ctx.insert("radio_name", radio_name);
+                    break;
+                }
+            }
+        }
+
         for extra in &self.extra_template_names {
             let rendered = match self.tera.render(extra, &ctx) {
                 Ok(rendered) => rendered,
@@ -143,6 +166,7 @@ impl Templates {
             };
             ctx.insert(extra.clone(), rendered.trim());
         }
+
         Ok(ctx)
     }
 
@@ -192,7 +216,7 @@ impl From<StatusDisplayType> for discord_rich_presence::activity::StatusDisplayT
 #[cfg(test)]
 mod tests {
     use super::Templates;
-    use crate::{controller_information::ConnectionInformation, settings::Settings};
+    use crate::{controller_information::ConnectionInformation, settings::Settings, utils::now};
 
     #[test]
     fn default_templates_load() {
@@ -207,6 +231,8 @@ mod tests {
 
         let info = ConnectionInformation::Idle;
 
-        templates.make_context(&settings, &info).expect("context");
+        templates
+            .make_context(&settings, &info, now())
+            .expect("context");
     }
 }

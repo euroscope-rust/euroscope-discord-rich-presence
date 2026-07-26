@@ -12,6 +12,9 @@ activity_retry_interval_s = 15
 # updates to ~5 per 20s. Since the tracked and in range counts churn constantly,
 # we limit the number of updates.
 activity_min_push_interval_s = 5
+# Maximum interval between presence pushes in seconds. Must be stricly bigger
+# than `activity_min_push_interval_s`.
+activity_max_push_interval_s = 30
 # Whether to treat sweatbox and playback connections as direct connections to
 # the network. Useful for testing.
 # If true, `connection_type` will show up as `Connected` instead of the others.
@@ -27,6 +30,9 @@ client_id = "1525152891478872094"
 #
 # Those strings can be templated with the following placeholders:
 # - `connection_type`: one of `Idle`, `Connected`, `Playback` or `Sweatbox`.
+# - `connection_duration`: how long the current connection has been active for.
+#   Always set, even if idle, in which case it indicates how long EuroScope has
+#   been idle for. It's an integer in seconds.
 # - `callsign`: the controller callsign (for example, `LSAS_CTR`). May be empty
 #   if idle.
 # - `frequency`: the primary frequency (for example, `133.005`). May be empty if
@@ -75,10 +81,10 @@ small_text = "{{ frequency_info }}"
 small_url = "{{ radar_url }}"
 
 # Discord only allows two buttons, so no `third`. To disable a button, set it to
-# `{}`, like the second one is done by default.
+# `{ label = "" }`, like the second one is done by default.
 [activity.buttons]
 first = { label = "See on VATSIM Radar", url = "{{ radar_url }}" }
-second = {}
+second = { label = "" }
 
 # A map of radio names for easier rendering of station names.
 [radio_names]
@@ -136,6 +142,7 @@ extra_tag_lines = []
 name = "action"
 # Extra fields are ignored. Use them for documentation!
 description = "What the controller is doing. Empty if idle."
+# The actual template that will get rendered.
 template = """
 {% if connection_type == 'Sweatbox' %}
 Sweating on
@@ -194,7 +201,7 @@ name = "extra_info"
 description = "Extra information about the controller's session. Empty if idle"
 template = """
 {% if connection_type != 'Idle' %}
-    {# 42 tracked · 51 in range · 122.800 MHz #}
+    {# 42/51 tracked/in range · 122.800 MHz #}
     {{ tracked }}/{{ in_range }} tracked/in range · {{ frequency_info }}
 {% endif %}
 """
