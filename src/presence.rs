@@ -335,11 +335,11 @@ mod tests {
     #[test]
     fn make_activity_idle() {
         let settings = Settings::load(&[]).expect("settings");
-        let templates = Templates::new(&settings).expect("templates");
+        let mut templates = Templates::new(&settings).expect("templates");
         let start_time = now();
 
         let info = ConnectionInformation::Idle;
 
-        make_activity(&settings, &templates, &info, start_time).expect("activity");
+        make_activity(&settings, &mut templates, &info, start_time).expect("activity");
     }
 }

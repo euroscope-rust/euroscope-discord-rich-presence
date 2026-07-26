@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn make_context_idle() {
         let settings = Settings::load(&[]).expect("settings");
-        let templates = Templates::new(&settings).expect("templates");
+        let mut templates = Templates::new(&settings).expect("templates");
 
         let info = ConnectionInformation::Idle;
 
