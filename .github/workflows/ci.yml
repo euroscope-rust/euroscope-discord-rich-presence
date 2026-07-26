@@ -46,9 +46,9 @@ jobs:
       fail-fast: false
       matrix:
         euroscope-version:
-          - latest
-          - 3.2.3.2
-          - 3.2.2.3
+          - "latest"
+          - "3.2.3.2"
+          - "3.2.2.3"
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -62,6 +62,26 @@ jobs:
         with:
           version: "${{ matrix.euroscope-version }}"
       - run: just ci-build
+      - id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "euroscope-discord-rich-presence-${{ matrix.euroscope-version }}"
+          path: target/i686-pc-windows-msvc/release/euroscope_discord_rich_presence.dll
+          if-no-files-found: error
+      # Matrix job outputs collapse to a single value, so hand each version's
+      # download URL to the `comment` job through a small per-version artifact.
+      - if: "${{ github.event_name == 'pull_request' }}"
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifact-links | Out-Null
+          "${{ matrix.euroscope-version }}|${{ steps.upload.outputs.artifact-url }}" |
+            Out-File -Encoding ascii "artifact-links/${{ matrix.euroscope-version }}.txt"
+      - if: "${{ github.event_name == 'pull_request' }}"
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "artifact-link-${{ matrix.euroscope-version }}"
+          path: "artifact-links/${{ matrix.euroscope-version }}.txt"
+          if-no-files-found: error
   test:
     runs-on: windows-latest
     steps:
@@ -85,3 +105,47 @@ jobs:
       - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe
         with:
           jobs: ${{ toJSON(needs) }}
+  comment:
+    if: "${{ github.event_name == 'pull_request' }}"
+    needs:
+      - build
+      - ci-mark
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: "artifact-link-*"
+          path: artifact-links
+          merge-multiple: true
+      - name: assemble comment body
+        shell: bash
+        run: |
+          {
+            echo '<!-- ci-build-artifacts -->'
+            echo '### Build artifacts'
+            echo
+            echo "Built for ${{ github.event.pull_request.head.sha }}. Downloading requires being logged in to GitHub."
+            echo
+            echo '| EuroScope version | Download |'
+            echo '| --- | --- |'
+            for f in $(ls artifact-links/*.txt | sort); do
+              ver=$(cut -d'|' -f1 "$f" | tr -d '\r\n')
+              url=$(cut -d'|' -f2 "$f" | tr -d '\r\n')
+              echo "| \`${ver}\` | [Download](${url}) |"
+            done
+          } > comment.md
+          cat comment.md
+      - id: find
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
+        with:
+          issue-number: "${{ github.event.pull_request.number }}"
+          comment-author: github-actions[bot]
+          body-includes: "<!-- ci-build-artifacts -->"
+      - uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          comment-id: "${{ steps.find.outputs.comment-id }}"
+          issue-number: "${{ github.event.pull_request.number }}"
+          body-path: comment.md
+          edit-mode: replace
