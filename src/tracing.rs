@@ -13,10 +13,8 @@ pub fn install(settings: &Settings) {
         .with_default_directive(Level::INFO.into())
         .parse_lossy(&settings.general.log_level);
 
-    if let Some(plugin_path) = get_plugin_path()
-        && let Some(plugin_dir) = plugin_path.parent()
-    {
-        let logs_dir = plugin_dir.join("logs");
+    if let Some(plugin_path) = get_plugin_path() {
+        let logs_dir = plugin_path.with_extension("logs");
         if let Ok(file_appender) = RollingFileAppender::builder()
             .rotation(Rotation::DAILY)
             .filename_suffix("log")
