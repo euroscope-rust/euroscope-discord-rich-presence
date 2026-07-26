@@ -69,17 +69,25 @@ pub fn run(
     loop {
         let retry_interval = Duration::from_secs(settings.general.activity_retry_interval_s);
         let min_push_interval = Duration::from_secs(settings.general.activity_min_push_interval_s);
+        let rotate_interval = Duration::from_secs(settings.idle.tag_line_rotate_interval_s);
+        let idle_refresh = settings.idle.set_presence_when_idle
+            && published.is_some()
+            && matches!(info, ConnectionInformation::Idle);
 
         // How long to wait for the next message. When we owe a push we wake
         // ourselves to send it: after the min-push window if connected, or after
-        // the retry window if we still need to (re)connect. With nothing owed we
-        // block until a message arrives.
-        let wait = if !dirty {
-            None
-        } else if connected {
-            Some(min_push_interval.saturating_sub(last_push.elapsed()))
+        // the retry window if we still need to (re)connect. When idle we wake to
+        // rotate the tag line. Otherwise we block until a message arrives.
+        let wait = if dirty {
+            if connected {
+                Some(min_push_interval.saturating_sub(last_push.elapsed()))
+            } else {
+                Some(retry_interval.saturating_sub(last_connect.elapsed()))
+            }
+        } else if idle_refresh {
+            Some(rotate_interval.saturating_sub(last_push.elapsed()))
         } else {
-            Some(retry_interval.saturating_sub(last_connect.elapsed()))
+            None
         };
 
         let msg = match wait {
@@ -131,7 +139,13 @@ pub fn run(
         }
 
         if !dirty {
-            continue;
+            // Nothing changed, but idle presence still needs a periodic
+            // re-render so its rotating tag line updates on Discord.
+            if idle_refresh && last_push.elapsed() >= rotate_interval {
+                dirty = true;
+            } else {
+                continue;
+            }
         }
 
         // (Re)connect if needed, no more than once per retry interval.

@@ -135,7 +135,7 @@ impl Plugin for DiscordRichPresence {
     }
 
     fn on_compile_command(&mut self, _ctx: &mut Context, command_line: &str) -> bool {
-        if command_line.starts_with(".drp refresh") {
+        if command_line.starts_with(".drp reload") {
             let settings_path = self
                 .settings_path
                 .clone()

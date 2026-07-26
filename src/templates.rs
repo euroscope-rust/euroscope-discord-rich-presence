@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use anyhow::{Result, anyhow};
 use rand::rng;
-use rand::seq::IndexedRandom;
+use rand::seq::IndexedRandom as _;
 use serde::Deserialize;
 use tera::{Context, Tera};
 use tracing::warn;
@@ -39,7 +39,7 @@ const DISALLOWED_NAMES: &[&str] = &[
 
 pub struct Templates {
     tera: Tera,
-    extra_templates: Vec<String>,
+    extra_template_names: Vec<String>,
     idle_tag_lines: Vec<String>,
     idle_tag_line: String,
     idle_tag_line_last_update: Instant,
@@ -48,7 +48,7 @@ pub struct Templates {
 impl Templates {
     pub fn new(settings: &Settings) -> Result<Self> {
         let mut tera = Tera::default();
-        let mut extra_templates = Vec::with_capacity(settings.templates.len());
+        let mut extra_template_names = Vec::with_capacity(settings.templates.len());
 
         tera.add_raw_template("name", &settings.activity.name)?;
         tera.add_raw_template("activity_type", &settings.activity.activity_type)?;
@@ -83,7 +83,7 @@ impl Templates {
             if DISALLOWED_NAMES.iter().any(|dn| dn == &extra.name) {
                 return Err(anyhow!("Template name {} is not allowed", extra.name));
             }
-            extra_templates.push(extra.name.clone());
+            extra_template_names.push(extra.name.clone());
             tera.add_raw_template(&extra.name, &extra.template)?;
         }
 
@@ -97,12 +97,12 @@ impl Templates {
         };
         let idle_tag_line = idle_tag_lines
             .choose(&mut rng())
-            .map(|s| s.to_owned())
+            .map(ToOwned::to_owned)
             .unwrap_or_default();
 
         Ok(Self {
             tera,
-            extra_templates,
+            extra_template_names,
             idle_tag_lines,
             idle_tag_line,
             idle_tag_line_last_update: Instant::now(),
@@ -120,7 +120,7 @@ impl Templates {
             let idle_tag_line = self
                 .idle_tag_lines
                 .choose(&mut rng())
-                .map(|s| s.to_owned())
+                .map(ToOwned::to_owned)
                 .unwrap_or_default();
             self.idle_tag_line = idle_tag_line;
             self.idle_tag_line_last_update = Instant::now();
@@ -129,7 +129,7 @@ impl Templates {
         let mut ctx = Context::new();
         ctx.insert("idle_tag_line", &self.idle_tag_line);
         info.enrich_context(&mut ctx, settings);
-        for extra in &self.extra_templates {
+        for extra in &self.extra_template_names {
             let rendered = match self.tera.render(extra, &ctx) {
                 Ok(rendered) => rendered,
                 Err(err) => {

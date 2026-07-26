@@ -25,7 +25,7 @@ euroscope = { version = "= 0.0.4" }
 rand = "= 0.10.2"
 serde = { version = "= 1.0.228", features = ["derive"] }
 serde_json = "= 1.0.151"
-tera = "= 2.0.0"
+tera = "= 2.1.0"
 tracing = "= 0.1.44"
 tracing-appender = "= 0.2.5"
 tracing-subscriber = { version = "= 0.3.23", features = [
@@ -74,6 +74,8 @@ perf = { priority = -1, level = "warn" }
 style = { priority = -1, level = "warn" }
 suspicious = { priority = -1, level = "warn" }
 # ### and disable the ones we don't want
+# ### cargo
+multiple_crate_versions = "allow"
 # ### pedantic group
 fn_params_excessive_bools = "allow"
 many_single_char_names = "allow"

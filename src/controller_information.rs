@@ -95,7 +95,9 @@ impl ConnectionInformation {
         match self {
             Self::Connected(info) | Self::Playback(info) | Self::Sweatbox(info) => {
                 ctx.insert("callsign", &info.callsign);
-                ctx.insert("frequency", &format!("{:.3}", info.frequency));
+                if (info.frequency - 199.998_f64).abs() > 0.001_f64 {
+                    ctx.insert("frequency", &format!("{:.3}", info.frequency));
+                }
                 ctx.insert("rating", info.rating.label());
                 // TODO: add a .label() in euroscope crate
                 let facility = match info.facility {

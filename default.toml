@@ -3,6 +3,7 @@
 # How much to log. Only affects file logs, not EuroScope messages.
 # This can be further customized as specified in
 # https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
+# This setting cannot be reloaded, and the plugin must be reloaded to change it.
 log_level = "info"
 # When our connection to Discord drops, how often to retry connecting in
 # seconds.
@@ -194,6 +195,6 @@ description = "Extra information about the controller's session. Empty if idle"
 template = """
 {% if connection_type != 'Idle' %}
     {# 42 tracked · 51 in range · 122.800 MHz #}
-    {{ tracked }} tracked · {{ in_range }} in range · {{ frequency_info }}
+    {{ tracked }}/{{ in_range }} tracked/in range · {{ frequency_info }}
 {% endif %}
 """
