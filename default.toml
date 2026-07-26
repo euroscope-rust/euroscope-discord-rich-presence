@@ -1,0 +1,207 @@
+# General app settings
+[general]
+# How much to log. Only affects file logs, not EuroScope messages.
+# This can be further customized as specified in
+# https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
+# This setting cannot be reloaded, and the plugin must be reloaded to change it.
+log_level = "info"
+# When our connection to Discord drops, how often to retry connecting in
+# seconds.
+activity_retry_interval_s = 15
+# Minimum interval between presence pushes in seconds. Discord rate-limits
+# updates to ~5 per 20s. Since the tracked and in range counts churn constantly,
+# we limit the number of updates.
+activity_min_push_interval_s = 5
+# Maximum interval between presence pushes in seconds. Must be stricly bigger
+# than `activity_min_push_interval_s`.
+activity_max_push_interval_s = 30
+# Whether to treat sweatbox and playback connections as direct connections to
+# the network. Useful for testing.
+# If true, `connection_type` will show up as `Connected` instead of the others.
+treat_other_connections_as_direct = false
+
+# Discord-specific settings
+[discord]
+# The Discord application client ID. Defaults to a generic application with a
+# few assets provided (see README).
+client_id = "1525152891478872094"
+
+# How the activity will render in Discord.
+#
+# Those strings can be templated with the following placeholders:
+# - `connection_type`: one of `Idle`, `Connected`, `Playback` or `Sweatbox`.
+# - `connection_duration`: how long the current connection has been active for.
+#   Always set, even if idle, in which case it indicates how long EuroScope has
+#   been idle for. It's an integer in seconds.
+# - `callsign`: the controller callsign (for example, `LSAS_CTR`). May be empty
+#   if idle.
+# - `frequency`: the primary frequency (for example, `133.005`). May be empty if
+#   idle or no primary frequency selected.
+# - `rating`: the controller rating (`OBS`, `S1`, `S2`, `S3`, `C1`, `C2`, `C3`,
+#   `I3`, `I2`, `I3`, `SUP`, `ADM`). May be empty if idle.
+# - `facility`: the facility the controller is connected as (`Observer`, `Flight
+#   Service`, `Delivery`, `Ground`, `Tower`, `Approach`, `Center`). May be empty
+#   if idle.
+# - `tracked`: the number of tracked aircraft. May be empty if idle.
+# - `in_range`: the number of aircraft in range. May be empty if idle.
+# - `radio_name`: one of the names defined below (for example, `Geneva Apron`).
+#   May be empty if not specific above. See the `[radio_names]` section below.
+# - `idle_tag_line`: tag line to use when EuroScope is idle. May be empty if not
+#   idle. See the `[idle]` section below.
+#
+# The templating is done with `tera`. Check out their documentation for details:
+# https://keats.github.io/tera/
+#
+# For details on what each of those do, refer to Discord's documentation:
+# https://docs.discord.com/developers/discord-social-sdk/development-guides/setting-rich-presence
+# You can also simply try them out and reload the configuration while the plugin
+# is loaded to see the changes live.
+#
+# To disable any of those values, set it to an empty string. The consequence of
+# this is that if a template evaluates to an empty string, it is also ignored.
+#
+# All templates are trimmed of leading and trailing whitespace.
+[activity]
+name = "EuroScope"
+# One of "Playing", "Listening", "Watching", "Competing".
+activity_type = "Playing"
+# One of "Name", "State", "Details".
+status_display_type = "Details"
+details = "{{ description }}"
+details_url = "{{ radar_url }}"
+state = "{{ extra_info }}"
+state_url = "{{ radar_url }}"
+
+[activity.assets]
+large_image = "vatsim"
+large_text = "{{ description }}"
+large_url = "{{ radar_url }}"
+small_image = ""
+small_text = "{{ frequency_info }}"
+small_url = "{{ radar_url }}"
+
+# Discord only allows two buttons, so no `third`. To disable a button, set it to
+# `{ label = "" }`, like the second one is done by default.
+[activity.buttons]
+first = { label = "See on VATSIM Radar", url = "{{ radar_url }}" }
+second = { label = "" }
+
+# A map of radio names for easier rendering of station names.
+[radio_names]
+# LSGG_A_GND = "Geneva Apron"
+# The keys here are actually globs, so you could do:
+# "LS*_CTR" = "Swiss Radar"
+
+[idle]
+# Whether to set the Discord presence when EuroScope is idle (i.e. not connected
+# to any network).
+set_presence_when_idle = true
+# Interval at which to change the tag line.
+tag_line_rotate_interval_s = 30
+# Tag line available as `idle_tag_line` in templates when EuroScope is idle.
+# Changing this option in your configuration file will overwrite all of those.
+# If you'd like to add more, use the `extra_tag_lines` option below.
+tag_lines = [
+    "Answering radio checks",
+    "Assigning random headings professionally",
+    "Awaiting calls",
+    "Awaiting handoffs",
+    "Checking FL5000 for conflicts",
+    "Checking NOTAMs",
+    "Listening to ATC chatter",
+    "Monitoring frequencies",
+    "Monitoring questionable shortcuts",
+    "Monitoring silence",
+    "Observing traffic flow",
+    "Radar scope screensaver",
+    "Reading the wrong scratchpad",
+    "Recording ATIS",
+    "Resolving TCAS diplomacy",
+    "Scanning for aircrafts",
+    "Searching for binoculars",
+    "Spacing arrivals with hope and optimism",
+    "Tracking airspace",
+    "Trying to avoid paperwork",
+    "Trying to contact UNICOM",
+    "Trying to find the strip printer",
+    "Waiting for CPDLC to replace humanity",
+    "Waiting for traffic",
+    "Watching the approach sequence collapse",
+    "Watching the skies",
+    "Wondering where the handoff went",
+]
+extra_tag_lines = []
+
+# Extra templates. You can use those to extract some data from the "main"
+# templates to avoid repetition. They are evaluated in the other specified here,
+# which means that later templates can use earlier ones.
+# Some names are forbidden and will result in an error. You can find those in
+# src/templates.rs under the `DISALLOWED_NAMES` list.
+[[templates]]
+# Name of the template and how you'll refer to it in other places.
+name = "action"
+# Extra fields are ignored. Use them for documentation!
+description = "What the controller is doing. Empty if idle."
+# The actual template that will get rendered.
+template = """
+{% if connection_type == 'Sweatbox' %}
+Sweating on
+{% elif connection_type == 'Playback' %}
+Playbacking
+{% else %}
+    {% if facility == 'Observer' %}
+        {% if rating == 'SUP' %}
+            Supervising as
+        {% elif rating == 'ADM' %}
+            Administrating as
+        {% else %}
+            Observing as
+        {% endif %}
+    {% else %}
+    Controlling
+    {% endif %}
+{% endif %}
+"""
+
+# Another example, where we use a previously-defined template, `action`.
+[[templates]]
+name = "radar_url"
+description = "VATSIM Radar URL pointing to the controller."
+template = """
+{% if action == 'Controlling' %}
+https://vatsim-radar.com/?atc={{ callsign }}
+{% endif -%}
+"""
+
+[[templates]]
+name = "description"
+description = "The controller's description we show as details by default."
+template = """
+{% if connection_type == 'Idle' %}
+    {{ idle_tag_line }}
+{% else %}
+    {# Controlling LSGG_TWR (S2) #}
+    {{ action }} {% if radio_name %}{{ radio_name }}{% else %}{{ callsign }}{% endif %}{% if rating != '' %} ({{ rating }}){% endif %}
+{% endif %}
+"""
+
+[[templates]]
+name = "frequency_info"
+description = "The controller's frequency spelled out."
+template = """
+{% if frequency %}
+    {{ frequency }} MHz
+{% else %}
+    No primary frequency
+{% endif %}
+"""
+
+[[templates]]
+name = "extra_info"
+description = "Extra information about the controller's session. Empty if idle"
+template = """
+{% if connection_type != 'Idle' %}
+    {# 42/51 tracked/in range · 122.800 MHz #}
+    {{ tracked }}/{{ in_range }} tracked/in range · {{ frequency_info }}
+{% endif %}
+"""

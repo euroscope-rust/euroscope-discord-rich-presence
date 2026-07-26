@@ -1,0 +1,1 @@
+# EuroScope Discord Rich Presence plugin
