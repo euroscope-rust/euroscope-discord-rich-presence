@@ -7,8 +7,9 @@ displays your EuroScope status as an activity in Discord.
 
 1. Download the plugin DLL (for your EuroScope version) from the
    [Releases](https://github.com/euroscope-rust/euroscope-discord-rich-presence/releases).
-   We currently publish for 3.2.2.3, 3.2.3.2 and the latest EuroScope version at
-   the time of the release, although they should be compatible with each other.
+   We currently publish for a few EuroScope versions which were available at the
+   time of the release. Pick the one most approriate for you, although all the
+   3.2.* versions should be compatible with each other.
 2. Save it in a sensible place, like your EuroScope plugin directory
    (`%APPDATA%\EuroScope\Plugins`).
 3. Load the plugin in EuroScope via `Other Set` > `Plugins`.
