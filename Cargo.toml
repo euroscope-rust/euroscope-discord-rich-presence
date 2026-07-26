@@ -1,15 +1,16 @@
 [package]
 name = "euroscope-discord-rich-presence"
-version = "0.1.0"
+version = "0.0.1"
 description = "EuroScope plugin to provide Discord Rich Presence information"
 authors = ["Marc 'risson' Schmitt <vatsim@risson.space>"]
 edition = "2024"
 readme = "README.md"
-homepage = "https://github.com/rissson/euroscope-plugin-rust"
-repository = "https://github.com/rissson/euroscope-plugin-rust.git"
+homepage = "https://github.com/euroscope-rust/euroscope-discord-rich-presence"
+repository = "https://github.com/euroscope-rust/euroscope-discord-rich-presence.git"
 license = "EUPL-1.2"
 keywords = ["euroscope", "vatsim", "plugin", "discord"]
 categories = ["aerospace::simulation"]
+publish = true
 
 [lib]
 crate-type = ["cdylib"]
