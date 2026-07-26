@@ -151,3 +151,7 @@ unused_trait_names = "warn"
 unwrap_in_result = "warn"
 unwrap_used = "warn"
 verbose_file_reads = "warn"
+
+[package.metadata.docs.rs]
+default-target = "i686-pc-windows-msvc"
+targets = []
