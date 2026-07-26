@@ -1,10 +1,4 @@
-//! EuroScope plugin that publishes the controller's active position to Discord
-//! Rich Presence.
-//!
-//! The plugin reads the logged-in controller ("myself") once per second in
-//! [`Plugin::on_timer`] and, whenever it changes, hands the snapshot to a
-//! background [`Presence`] worker. Nothing here ever blocks EuroScope's main
-//! thread — all Discord IPC happens on the worker thread.
+#![doc = include_str!("../README.md")]
 
 pub mod controller_information;
 pub mod presence;
