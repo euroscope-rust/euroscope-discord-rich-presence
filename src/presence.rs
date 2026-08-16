@@ -45,6 +45,7 @@ enum Target {
 /// The first iteration always blocks on `recv`, so nothing is published before
 /// the main thread hands us a state to show. Connecting up front is allowed and
 /// only makes that first push faster.
+#[expect(clippy::too_many_lines, reason = "Single cohesive worker loop")]
 pub fn run(
     presence_rx: &mpsc::Receiver<PresenceMsg>,
     mut settings: Settings,
@@ -119,8 +120,15 @@ pub fn run(
 
         match msg {
             Some(PresenceMsg::Update(i)) => {
-                if i.label(&settings) != info.label(&settings) {
+                let previous = info.label(&settings);
+                let new = i.label(&settings);
+                if previous != new {
                     start_time = now();
+                    debug!(
+                        from = previous,
+                        to = new,
+                        "Controller connection type changed."
+                    );
                 }
                 info = i;
                 ready = true;
