@@ -1,0 +1,109 @@
+---
+name: release-on-tag
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Gate: reuse the full CI (lint + test + release-mode build matrix). The build
+  # job uploads the per-euroscope-version DLLs, which `draft` reuses as assets.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          manifest="$(sed -nE 's/^version = "([^"]+)".*/\1/p' Cargo.toml | head -1)"
+          if [ "$manifest" != "${{ github.ref_name }}" ]; then
+            echo "::error::Cargo.toml version ($manifest) does not match tag (${{ github.ref_name }})"
+            exit 1
+          fi
+
+  # Stage everything reversible: assemble assets, attest them, and create the
+  # release as a *draft* (drafts stay mutable/deletable) before anything burns.
+  draft:
+    needs:
+      - ci
+      - guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: "euroscope-discord-rich-presence-*"
+          path: artifacts
+      - name: Stage release assets
+        run: |
+          mkdir -p dist
+          for dir in artifacts/euroscope-discord-rich-presence-*; do
+            es="${dir##*/euroscope-discord-rich-presence-}"
+            cp "$dir/euroscope_discord_rich_presence.dll" \
+               "dist/euroscope-discord-rich-presence-${{ github.ref_name }}-es-${es}.dll"
+          done
+          ls -l dist
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: "dist/*.dll"
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --draft \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            dist/*.dll
+
+  # Irreversible #1: publish to crates.io (Trusted Publishing / OIDC). Runs on
+  # Windows with the EuroScope SDK so cargo's verification build can link.
+  crates:
+    needs:
+      - draft
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          target: i686-pc-windows-msvc
+      - uses: euroscope-rust/actions/install@2206ca39837dfa846ce5f345476c7cde90083283
+      - id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  # Irreversible #2: flip the draft to published, which is where immutability
+  # locks. Done last so a crates.io failure never leaves a locked release.
+  publish:
+    needs:
+      - crates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false
