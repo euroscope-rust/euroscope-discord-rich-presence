@@ -8,7 +8,7 @@ use discord_rich_presence::{
     DiscordIpc as _, DiscordIpcClient,
     activity::{Activity, Assets, Button, Timestamps},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     controller_information::ConnectionInformation,
@@ -17,6 +17,7 @@ use crate::{
     utils::now,
 };
 
+#[derive(Debug)]
 pub enum PresenceMsg {
     Update(ConnectionInformation),
     // Boxed to keep the enum small
@@ -117,6 +118,7 @@ pub fn run(
                 }
             },
         };
+        trace!(?msg, "Received message from main thread.");
 
         match msg {
             Some(PresenceMsg::Update(i)) => {
