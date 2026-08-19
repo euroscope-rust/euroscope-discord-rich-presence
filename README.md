@@ -102,3 +102,9 @@ Just open an issue or a PR :D
 ## Releasing
 
 TODO
+
+## Acknowledgements
+
+The idle texts come from the
+[plugin](https://github.com/AlexisBalzano/EuroscopeRPC) used by the French vACC
+and written by Alexis Balzano.
