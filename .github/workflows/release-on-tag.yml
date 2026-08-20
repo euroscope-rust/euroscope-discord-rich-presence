@@ -87,7 +87,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
           target: i686-pc-windows-msvc
-      - uses: euroscope-rust/actions/install@2206ca39837dfa846ce5f345476c7cde90083283
+      - uses: euroscope-rust/actions/install@f7d89d5d2fd9ac133f94b216345934565bc7926d
       - id: auth
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - run: cargo publish
