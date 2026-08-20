@@ -17,13 +17,16 @@ jobs:
   # Gate: reuse the full CI (lint + test + release-mode build matrix). The build
   # job uploads the per-euroscope-version DLLs, which `draft` reuses as assets.
   ci:
-    # id-token/attestations must be granted here: a reusable workflow's jobs are
-    # capped by the permissions the caller passes in, so the build job's own
-    # attestation step can only mint an OIDC token if we allow it at the call.
+    # A reusable workflow's jobs are capped by the permissions the caller passes
+    # in, and GitHub validates *every* nested job's request up front — even ones
+    # skipped at runtime. So this must cover the union of ci.yml's jobs:
+    # id-token/attestations for the build job's attestation, and pull-requests
+    # for the (tag-run-skipped) PR-comment job.
     permissions:
       contents: read
       id-token: write
       attestations: write
+      pull-requests: write
     uses: ./.github/workflows/ci.yml
 
   guard:
