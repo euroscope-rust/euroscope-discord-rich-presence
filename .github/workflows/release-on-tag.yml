@@ -17,6 +17,13 @@ jobs:
   # Gate: reuse the full CI (lint + test + release-mode build matrix). The build
   # job uploads the per-euroscope-version DLLs, which `draft` reuses as assets.
   ci:
+    # id-token/attestations must be granted here: a reusable workflow's jobs are
+    # capped by the permissions the caller passes in, so the build job's own
+    # attestation step can only mint an OIDC token if we allow it at the call.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     uses: ./.github/workflows/ci.yml
 
   guard:
@@ -31,8 +38,9 @@ jobs:
             exit 1
           fi
 
-  # Stage everything reversible: assemble assets, attest them, and create the
-  # release as a *draft* (drafts stay mutable/deletable) before anything burns.
+  # Stage everything reversible: assemble the assets (already attested by the
+  # `ci` build job) and create the release as a *draft* (drafts stay
+  # mutable/deletable) before anything irreversible happens.
   draft:
     needs:
       - ci
@@ -40,8 +48,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -56,9 +62,6 @@ jobs:
                "dist/euroscope-discord-rich-presence-${{ github.ref_name }}-es-${es}.dll"
           done
           ls -l dist
-      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-path: "dist/*.dll"
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
