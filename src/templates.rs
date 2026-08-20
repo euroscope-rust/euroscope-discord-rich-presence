@@ -37,6 +37,7 @@ const DISALLOWED_NAMES: &[&str] = &[
     "buttons_second_url",
 ];
 
+#[derive(Debug)]
 pub struct Templates {
     tera: Tera,
     extra_template_names: Vec<String>,
