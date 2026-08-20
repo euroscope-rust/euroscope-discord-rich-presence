@@ -1,5 +1,5 @@
 ---
-name: release-on-tag
+name: "Release - On tag"
 
 on:
   push:
