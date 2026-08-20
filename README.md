@@ -101,7 +101,10 @@ Just open an issue or a PR :D
 
 ## Releasing
 
-TODO
+1. Run the [Release -
+   Create](https://github.com/euroscope-rust/euroscope-discord-rich-presence/actions/workflows/release-create.yml)
+   workflow, with the version to release.
+2. Publish the created release.
 
 ## Acknowledgements
 

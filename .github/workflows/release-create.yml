@@ -1,11 +1,11 @@
 ---
-name: release-create
+name: "Release - Create"
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release (e.g. 0.0.2)"
+        description: "Version to release (e.g. 0.0.0)"
         required: true
         type: string
 
@@ -19,7 +19,7 @@ jobs:
       - name: Validate version input
         run: |
           if ! printf '%s' "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::version must look like 0.0.2 (got '${{ inputs.version }}')"
+            echo "]::error::version must look like 0.0.2 (got '${{ inputs.version }}')"
             exit 1
           fi
       # A GitHub App token (not the default GITHUB_TOKEN) is required so that the
