@@ -1,9 +1,12 @@
 # General app settings
 [general]
 # How much to log. Only affects file logs, not EuroScope messages.
+# Valid values are: "error", "warn", "info", "debug" and "trace".
+# We recommend setting this to "debug" during the initial implementation, and
+# then switching back to the default. Only set this to "trace" during specific
+# debugging sessions, as it will generate a lot of logs.
 # This can be further customized as specified in
 # https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
-# This setting cannot be reloaded, and the plugin must be reloaded to change it.
 log_level = "info"
 # When our connection to Discord drops, how often to retry connecting in
 # seconds.
