@@ -140,6 +140,7 @@ impl Plugin for DiscordRichPresence {
                     Ok(settings) => match Templates::new(&settings) {
                         Ok(templates) => {
                             info!(target: "mbox", "Successfully reloaded settings.");
+                            tracing::reload_log_level(&settings.general.log_level);
                             self.send_presence_msg(PresenceMsg::RefreshSettings(Box::new((
                                 settings, templates,
                             ))));
