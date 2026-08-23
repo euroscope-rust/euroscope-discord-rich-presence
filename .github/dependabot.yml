@@ -21,6 +21,8 @@ updates:
       - dependencies
     cooldown:
       default-days: 7
+      exclude:
+        - euroscope
   - package-ecosystem: rust-toolchain
     directory: /
     schedule:
