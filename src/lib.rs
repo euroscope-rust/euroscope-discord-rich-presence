@@ -17,6 +17,7 @@ use crate::{
     presence::{PresenceMsg, run},
     settings::Settings,
     templates::Templates,
+    tracing::{LogReloadHandle, reload_log_level},
 };
 
 struct DiscordRichPresence {
@@ -24,6 +25,7 @@ struct DiscordRichPresence {
     handle: Option<JoinHandle<()>>,
     settings_path: Option<PathBuf>,
     thread_seen_dead: bool,
+    log_reload_handle: LogReloadHandle,
 }
 
 impl DiscordRichPresence {
@@ -98,7 +100,7 @@ impl Plugin for DiscordRichPresence {
             }
         };
 
-        tracing::install(&settings);
+        let log_reload_handle = tracing::install(&settings);
         drop(tracing_crude);
 
         let (presence_tx, presence_rx) = mpsc::channel();
@@ -110,6 +112,7 @@ impl Plugin for DiscordRichPresence {
             handle,
             settings_path,
             thread_seen_dead: false,
+            log_reload_handle,
         }
     }
 
@@ -140,6 +143,7 @@ impl Plugin for DiscordRichPresence {
                     Ok(settings) => match Templates::new(&settings) {
                         Ok(templates) => {
                             info!(target: "mbox", "Successfully reloaded settings.");
+                            reload_log_level(&self.log_reload_handle, &settings.general.log_level);
                             self.send_presence_msg(PresenceMsg::RefreshSettings(Box::new((
                                 settings, templates,
                             ))));
