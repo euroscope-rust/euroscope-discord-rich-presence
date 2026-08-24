@@ -1,6 +1,6 @@
-use chrono::Utc;
+use jiff::Timestamp;
 
 #[inline]
 pub fn now() -> i64 {
-    Utc::now().timestamp_millis()
+    Timestamp::now().as_millisecond()
 }
