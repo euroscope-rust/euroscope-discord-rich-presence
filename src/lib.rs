@@ -9,8 +9,9 @@ pub mod utils;
 
 use std::{fs::metadata, path::PathBuf, sync::mpsc, thread, thread::JoinHandle};
 
-use ::tracing::{error, info, trace, warn};
+use ::tracing::{Span, error, error_span, info, span::EnteredSpan, trace, warn};
 use euroscope::{Context, Plugin, get_plugin_path, register_plugin};
+use uuid::Uuid;
 
 use crate::{
     controller_information::ConnectionInformation,
@@ -26,6 +27,7 @@ struct DiscordRichPresence {
     settings_path: Option<PathBuf>,
     thread_seen_dead: bool,
     log_reload_handle: LogReloadHandle,
+    _instance_span: EnteredSpan,
 }
 
 impl DiscordRichPresence {
@@ -102,10 +104,18 @@ impl Plugin for DiscordRichPresence {
 
         let log_reload_handle = tracing::install(&settings);
         drop(tracing_crude);
+        let instance_id = Uuid::new_v4();
+        let instance_span = error_span!("root", %instance_id).entered();
+        info!(
+            target: "mbox",
+            %instance_id,
+            "Log statements from this EuroScope window are tagged with this instance id."
+        );
+        let presence_span = Span::clone(&instance_span);
 
         let (presence_tx, presence_rx) = mpsc::channel();
         let handle = Some(thread::spawn(move || {
-            run(&presence_rx, settings, templates);
+            presence_span.in_scope(|| run(&presence_rx, settings, templates));
         }));
         Self {
             presence_tx,
@@ -113,6 +123,7 @@ impl Plugin for DiscordRichPresence {
             settings_path,
             thread_seen_dead: false,
             log_reload_handle,
+            _instance_span: instance_span,
         }
     }
 
