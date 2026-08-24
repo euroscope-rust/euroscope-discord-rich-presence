@@ -38,6 +38,7 @@ pub fn install(settings: &Settings) -> LogReloadHandle {
                 .with(
                     fmt::layer()
                         .json()
+                        .with_current_span(false)
                         .with_writer(file_appender)
                         .with_filter(filter_layer),
                 )
