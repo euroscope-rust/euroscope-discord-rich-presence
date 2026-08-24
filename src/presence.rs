@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Debug)]
 pub enum PresenceMsg {
-    Update(ConnectionInformation),
+    Update(Option<ConnectionInformation>),
     // Boxed to keep the enum small
     RefreshSettings(Box<(Settings, Templates)>),
     Shutdown,
@@ -39,13 +39,15 @@ enum Target {
 /// The loop coalesces updates: it never pushes to Discord more than once per
 /// `activity_min_push_interval_s`, and — so the presence stays fresh and the
 /// idle tag line keeps rotating — pushes at least once per
-/// `activity_max_push_interval_s`. While idle with idle presence disabled it
-/// clears the activity instead. If the connection to Discord drops, it
+/// `activity_max_push_interval_s`. It connects to Discord only while there is
+/// something to show and disconnects whenever there isn't (an idle state with
+/// idle presence disabled, or a connection type we don't publish), so an
+/// instance with nothing to show doesn't hold a Discord pipe and clobber
+/// another instance sharing the same application. On a dropped connection it
 /// reconnects at most once per `activity_retry_interval_s`.
 ///
-/// The first iteration always blocks on `recv`, so nothing is published before
-/// the main thread hands us a state to show. Connecting up front is allowed and
-/// only makes that first push faster.
+/// The first iteration always blocks on `recv`, so nothing is touched before
+/// the main thread hands us a state.
 #[expect(clippy::too_many_lines, reason = "Single cohesive worker loop")]
 pub fn run(
     presence_rx: &mpsc::Receiver<PresenceMsg>,
@@ -56,47 +58,56 @@ pub fn run(
 
     let mut client = DiscordIpcClient::new(settings.discord.client_id.clone());
 
-    // Placeholder until the first update arrives; never published on its own
-    // (see `published` below).
-    let mut info = ConnectionInformation::default();
+    // The latest state from the main thread, or `None` when there's nothing to
+    // show. `ready` stays false until the first message, so we touch nothing
+    // before then.
+    let mut info: Option<ConnectionInformation> = None;
+    let mut ready = false;
 
-    // Connect ahead of the first message so the first push is immediate. A
-    // failure here is fine; we retry inside the loop on the retry interval.
-    let mut connected = connect(&mut client);
-    let mut last_connect = Instant::now();
+    // We connect lazily — only while there is something to show — and drop the
+    // connection otherwise, so an instance with nothing to show doesn't hold a
+    // Discord pipe. `last_connect` is the failure backoff timer (only bumped on
+    // a failed attempt); seeding it in the past lets the first connect happen
+    // immediately.
+    let mut connected = false;
+    let mut last_connect = Instant::now()
+        .checked_sub(Duration::from_secs(
+            settings.general.activity_retry_interval_s,
+        ))
+        .unwrap_or_else(Instant::now);
 
     let mut start_time = now();
-    // Seed the last push far enough in the past that the first update is sent
-    // without waiting on the min-push interval.
+    // Seed the last push far enough in the past that the first push isn't
+    // delayed by the min-push window.
     let mut last_push = Instant::now()
         .checked_sub(Duration::from_secs(
             settings.general.activity_min_push_interval_s,
         ))
         .unwrap_or_else(Instant::now);
-    // What Discord is currently showing, or `None` if we've never pushed.
+    // What Discord is currently showing, or `None` if we've never applied a
+    // target.
     let mut published: Option<Target> = None;
-    // Whether the main thread has handed us a state yet. Until it has we block
-    // on `recv` and publish nothing.
-    let mut ready = false;
 
     loop {
         let retry_interval = Duration::from_secs(settings.general.activity_retry_interval_s);
+        let target = current_target(info.as_ref(), &settings);
 
-        // What Discord should show right now, and the window that must elapse
-        // after the last push before we (re)apply it (or `None` if it already
-        // matches and needs no heartbeat).
-        let target = current_target(&info, &settings);
-        let push_due = next_push_interval(published.as_ref(), &target, &settings);
-
-        // How long to block for the next message before acting on our own. Not
-        // ready → await the first state. Otherwise, if a push is owed, wake to
-        // (re)connect or to send it; if not, block until a message arrives.
-        let wait = if !ready {
-            None
-        } else if !connected {
-            push_due.map(|_| retry_interval.saturating_sub(last_connect.elapsed()))
+        // How long to block for the next message before acting on our own:
+        //  - not ready → await the first state;
+        //  - nothing to show → already disconnected, block until a message;
+        //  - showing but disconnected → wake to (re)connect;
+        //  - showing and connected → wake when the next push is due.
+        let wait = if ready {
+            match &target {
+                Target::Clear => None,
+                Target::Show(_) if connected => {
+                    next_push_interval(published.as_ref(), &target, &settings)
+                        .map(|interval| interval.saturating_sub(last_push.elapsed()))
+                }
+                Target::Show(_) => Some(retry_interval.saturating_sub(last_connect.elapsed())),
+            }
         } else {
-            push_due.map(|interval| interval.saturating_sub(last_push.elapsed()))
+            None
         };
 
         let msg = match wait {
@@ -122,15 +133,18 @@ pub fn run(
 
         match msg {
             Some(PresenceMsg::Update(i)) => {
-                let previous = info.label(&settings);
-                let new = i.label(&settings);
+                let previous = display_label(info.as_ref(), &settings);
+                let new = display_label(i.as_ref(), &settings);
                 if previous != new {
                     start_time = now();
-                    debug!(
-                        from = previous,
-                        to = new,
-                        "Controller connection type changed."
-                    );
+                    // `ready` skips the initial none-to-first-state jump.
+                    if ready {
+                        debug!(
+                            from = previous,
+                            to = new,
+                            "Controller connection type changed."
+                        );
+                    }
                 }
                 info = i;
                 ready = true;
@@ -158,38 +172,47 @@ pub fn run(
             continue;
         }
 
-        // (Re)connect if needed, no more than once per retry interval.
-        if !connected && last_connect.elapsed() >= retry_interval {
-            connected = connect(&mut client);
-            last_connect = Instant::now();
-        }
-        if !connected {
-            // Still down; the retry interval governs the next attempt.
-            continue;
-        }
-
-        // Apply the target once its window (min after a change, max as a
-        // heartbeat) has elapsed.
-        let target = current_target(&info, &settings);
-        if let Some(interval) = next_push_interval(published.as_ref(), &target, &settings)
-            && last_push.elapsed() >= interval
-        {
-            let result = match &target {
-                Target::Show(state) => {
-                    set_activity(&settings, &mut templates, &mut client, state, start_time)
-                }
-                Target::Clear => clear_activity(&mut client),
-            };
-            match result {
-                Ok(()) => {
-                    published = Some(target);
-                    last_push = Instant::now();
-                }
-                Err(err) => {
-                    warn!(%err, "Failed to update Discord presence.");
-                    // The write failed, so assume the pipe dropped and let the
-                    // retry interval govern the next reconnect attempt.
+        let target = current_target(info.as_ref(), &settings);
+        match &target {
+            // Nothing to show: drop the connection so another instance sharing
+            // this Discord application can take over the presence.
+            Target::Clear => {
+                if connected {
+                    debug!("Nothing to show; disconnecting from Discord.");
+                    let _ = client.close();
                     connected = false;
+                }
+                published = Some(Target::Clear);
+            }
+            Target::Show(state) => {
+                // Connect on demand; back off to the retry interval only after a
+                // failed attempt.
+                if !connected && last_connect.elapsed() >= retry_interval {
+                    connected = connect(&mut client);
+                    if !connected {
+                        last_connect = Instant::now();
+                    }
+                }
+
+                // Push once the applicable window (min after a change, max as a
+                // heartbeat) has elapsed.
+                if connected
+                    && let Some(interval) =
+                        next_push_interval(published.as_ref(), &target, &settings)
+                    && last_push.elapsed() >= interval
+                {
+                    match set_activity(&settings, &mut templates, &mut client, state, start_time) {
+                        Ok(()) => {
+                            published = Some(Target::Show(state.clone()));
+                            last_push = Instant::now();
+                        }
+                        Err(err) => {
+                            warn!(%err, "Failed to set Discord presence.");
+                            // The write failed, so assume the pipe dropped and
+                            // reconnect on the retry interval.
+                            connected = false;
+                        }
+                    }
                 }
             }
         }
@@ -198,14 +221,20 @@ pub fn run(
     let _ = client.close();
 }
 
-/// What Discord should currently be showing: nothing while idle if idle
-/// presence is disabled, otherwise the latest state.
-fn current_target(info: &ConnectionInformation, settings: &Settings) -> Target {
-    if !settings.idle.set_presence_when_idle && matches!(info, ConnectionInformation::Idle) {
-        Target::Clear
-    } else {
-        Target::Show(info.clone())
+/// What Discord should currently be showing: nothing when there's no state, or
+/// while idle if idle presence is disabled; otherwise the latest state.
+fn current_target(info: Option<&ConnectionInformation>, settings: &Settings) -> Target {
+    match info {
+        Some(ConnectionInformation::Idle) if !settings.idle.set_presence_when_idle => Target::Clear,
+        Some(info) => Target::Show(info.clone()),
+        None => Target::Clear,
     }
+}
+
+/// A short label for the current state, for logging. `None` (nothing to show)
+/// renders as `"None"`.
+fn display_label(info: Option<&ConnectionInformation>, settings: &Settings) -> &'static str {
+    info.map_or("None", |info| info.label(settings))
 }
 
 /// The window that must elapse after the last push before `target` should be
@@ -263,17 +292,6 @@ fn set_activity(
     // looks like success; surface it so we can see accept/reject and why.
     let (_, response) = client.recv()?;
     debug!(%response, "Discord SET_ACTIVITY response");
-
-    Ok(())
-}
-
-#[inline]
-fn clear_activity(client: &mut DiscordIpcClient) -> Result<()> {
-    client.clear_activity()?;
-
-    // Like `set_activity`, read Discord's reply so it doesn't desync the pipe.
-    let (_, response) = client.recv()?;
-    debug!(%response, "Discord clear-activity response");
 
     Ok(())
 }

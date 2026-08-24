@@ -133,12 +133,8 @@ impl Plugin for DiscordRichPresence {
         }
 
         let info = ConnectionInformation::from_ctx(ctx);
-        if let Some(info) = info {
-            trace!(?info, "Sending controller information to thread.");
-            self.send_presence_msg(PresenceMsg::Update(info));
-        } else {
-            trace!("No controller info to send to thread.");
-        }
+        trace!(?info, "Sending controller information to thread.");
+        self.send_presence_msg(PresenceMsg::Update(info));
     }
 
     fn on_compile_command(&mut self, _ctx: &mut Context, command_line: &str) -> bool {
