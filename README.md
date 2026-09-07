@@ -57,6 +57,35 @@ You can also use a custom URL to set assets, most notably for moving assets
 
 ## Available commands
 
+Commands are typed in the EuroScope command line and are case insensitive.
+
+#### `.drp help`
+
+Lists the available commands in the EuroScope message box, under the plugin's
+own handler.
+
+`.help drp` prints the same list under EuroScope's `HELP` handler, and a plain
+`.help` makes the plugin announce itself there alongside the other plugins.
+
+#### `.drp status`
+
+Shows what the plugin is currently doing: whether processing is running or
+stopped, which settings file is in use, whether we are connected to Discord,
+the connection state we last saw, when the last update was pushed, when the next
+one is due, and the payload that was last sent.
+
+#### `.drp stop`
+
+Stops processing: no further updates are sent to Discord and the Discord
+connection is dropped, which clears the activity. The plugin also stops
+gathering controller information while stopped, so it costs nothing to leave it
+that way.
+
+#### `.drp start`
+
+Resumes processing after a `.drp stop`. The activity is pushed again from the
+current state, and the connection to Discord is re-established.
+
 #### `.drp reload`
 
 Reloads the settings from the settings file on the fly, without having to unload
