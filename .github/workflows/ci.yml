@@ -73,7 +73,7 @@ jobs:
         with:
           subject-path: target/i686-pc-windows-msvc/release/euroscope_discord_rich_presence.dll
       - id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: "euroscope-discord-rich-presence-${{ matrix.euroscope-version }}"
           path: target/i686-pc-windows-msvc/release/euroscope_discord_rich_presence.dll
@@ -87,7 +87,7 @@ jobs:
           "${{ matrix.euroscope-version }}|${{ steps.upload.outputs.artifact-url }}" |
             Out-File -Encoding ascii "artifact-links/${{ matrix.euroscope-version }}.txt"
       - if: "${{ github.event_name == 'pull_request' }}"
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: "artifact-link-${{ matrix.euroscope-version }}"
           path: "artifact-links/${{ matrix.euroscope-version }}.txt"
